@@ -2,231 +2,226 @@
 <html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#090D16">
-<title>Nexus Corp — Empire &amp; Arcade</title>
-<link rel="stylesheet" href="styles.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23090D16'/%3E%3Cpath d='M20 46V18l24 28V18' stroke='%2310B981' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0A07">
+<meta name="description" content="Nexus Corp — an idle corporate tycoon fused with a 20-cabinet arcade floor.">
+<title>NEXUS//CORP — Ops Deck</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230B0A07'/%3E%3Crect x='5' y='8' width='22' height='4' fill='%23FFB000'/%3E%3Crect x='5' y='14' width='16' height='4' fill='%2337F57C'/%3E%3Crect x='5' y='20' width='9' height='4' fill='%2325D0FF'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Noto+Kufi+Arabic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/base.css">
+<link rel="stylesheet" href="./styles/shell.css">
+<link rel="stylesheet" href="./styles/widgets.css">
+<link rel="stylesheet" href="./styles/cabinet.css">
 </head>
 <body>
 
-<div id="boot" class="boot">
-  <div class="boot-logo">NEXUS</div>
-  <div class="boot-bar"><i></i></div>
-  <div class="boot-text" data-i18n="loading">Booting corporate mainframe…</div>
+<div class="crt" aria-hidden="true"></div>
+
+<!-- ══════════ BOOT SPLASH ══════════ -->
+<div id="splash">
+  <div class="splash-inner">
+    <pre class="splash-logo">
+ ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗
+ ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝
+ ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║█████╗
+ ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║██╔══╝
+ ██║ ╚████║███████╗██╔╝ ██╗███████║███████╗
+ ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝</pre>
+    <div class="splash-sub" data-i18n="boot.tag">CORPORATE OPS DECK · REV 2</div>
+    <div class="boot-bar"><i id="boot-fill"></i></div>
+    <div class="boot-log" id="boot-log"></div>
+  </div>
 </div>
 
-<!-- ══════════ HUD ══════════ -->
-<header class="hud" id="hud">
-  <div class="hud-brand">
-    <div class="hud-logo">NEXUS</div>
-    <div class="hud-tag" data-i18n="app_sub">Empire &amp; Arcade</div>
-  </div>
+<!-- ══════════ APP SHELL ══════════ -->
+<div id="shell" hidden>
 
-  <div class="hud-stats">
-    <div class="stat stat-cash">
-      <span class="stat-label" data-i18n="cash">Cash</span>
-      <b class="stat-value" id="stCash">$0</b>
-    </div>
-    <div class="stat">
-      <span class="stat-label" data-i18n="per_sec">Income</span>
-      <b class="stat-value sm" id="stRate">$0/s</b>
-    </div>
-    <div class="stat">
-      <span class="stat-label" data-i18n="net_worth">Net Worth</span>
-      <b class="stat-value sm" id="stWorth">$0</b>
-    </div>
-    <div class="stat">
-      <span class="stat-label" data-i18n="click_power">Click Power</span>
-      <b class="stat-value sm" id="stClick">$1</b>
-    </div>
-    <div class="stat stat-shares">
-      <span class="stat-label" data-i18n="shares">Exec Shares</span>
-      <b class="stat-value sm" id="stShares">0</b>
-    </div>
-  </div>
-
-  <div class="hud-actions">
-    <div class="oc-pill" id="ocPill" hidden>
-      <span data-i18n="overclock_active">OVERCLOCKED</span>
-      <b id="ocTime">5:00</b>
-    </div>
-    <button class="icon-btn" id="btnLang" title="Language / اللغة">EN / ع</button>
-    <button class="icon-btn" id="btnSound" title="SFX">♪</button>
-    <button class="icon-btn" id="btnMusic" title="Music">♫</button>
-  </div>
-</header>
-
-<!-- ══════════ TABS ══════════ -->
-<nav class="tabs" id="tabs">
-  <button class="tab active" data-tab="tycoon"><span data-i18n="nav_tycoon">Tycoon HQ</span></button>
-  <button class="tab" data-tab="arcade"><span data-i18n="nav_arcade">Arcade Work Hub</span></button>
-  <button class="tab" data-tab="ledger"><span data-i18n="nav_ledger">Ledger</span></button>
-  <button class="tab" data-tab="settings"><span data-i18n="nav_settings">Settings</span></button>
-</nav>
-
-<main id="main">
-
-  <!-- ══════════ TYCOON ══════════ -->
-  <section class="view active" id="view-tycoon">
-
-    <div class="command">
-      <h1 class="view-title" data-i18n="tycoon_title">Corporate Command Center</h1>
-      <button class="terminal" id="terminal">
-        <span class="term-grid" aria-hidden="true"></span>
-        <span class="term-prompt">&gt;_</span>
-        <span class="term-label" data-i18n="terminal_click">Write Code / Close Deal</span>
-        <span class="term-click">$1</span>
-        <div class="term-fx" id="termFx"></div>
-      </button>
-      <div class="combo-bar" id="comboBar"><i id="comboFill"></i><b id="comboTxt">x1.0</b></div>
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-mark">NX</span>
+      <span class="brand-name">NEXUS<em>//</em>CORP</span>
+      <span class="brand-tick" id="tick-dot" title="loop"></span>
     </div>
 
-    <div class="cols">
-      <section class="panel">
-        <h2 class="panel-title"><span class="dot dot-em"></span><span data-i18n="departments">Departments</span></h2>
-        <div class="dept-grid" id="deptGrid"></div>
-      </section>
+    <div class="gauges" id="gauges">
+      <div class="gauge" data-k="cash"><span class="g-lbl" data-i18n="g.cash">CASH</span><b id="g-cash">$0</b></div>
+      <div class="gauge" data-k="flow"><span class="g-lbl" data-i18n="g.flow">FLOW</span><b id="g-flow">$0/s</b></div>
+      <div class="gauge" data-k="worth"><span class="g-lbl" data-i18n="g.worth">WORTH</span><b id="g-worth">$0</b></div>
+      <div class="gauge" data-k="hit"><span class="g-lbl" data-i18n="g.hit">PER HIT</span><b id="g-hit">$1</b></div>
+      <div class="gauge" data-k="shares"><span class="g-lbl" data-i18n="g.shares">SHARES</span><b id="g-shares">0</b></div>
+      <div class="gauge gauge-x" data-k="combo"><span class="g-lbl" data-i18n="g.combo">COMBO</span><b id="g-combo">x1</b></div>
+    </div>
 
-      <section class="panel">
-        <h2 class="panel-title"><span class="dot dot-in"></span><span data-i18n="upgrades">Active Upgrades</span></h2>
-        <div class="up-list" id="upList"></div>
+    <div class="ops">
+      <div id="oc-chip" class="oc-chip" hidden><span data-i18n="oc.tag">OVERCLOCK</span><b id="oc-left">0:00</b></div>
+      <button class="ico" id="btn-lang" title="Language"><span id="btn-lang-txt">AR</span></button>
+      <button class="ico" id="btn-sfx" title="SFX" aria-pressed="true">SFX</button>
+      <button class="ico" id="btn-mus" title="Music" aria-pressed="false">MUS</button>
+    </div>
+  </header>
 
-        <h2 class="panel-title mt"><span class="dot dot-cr"></span><span data-i18n="managers">Executive Managers</span></h2>
-        <div class="mgr-list" id="mgrList"></div>
+  <nav id="deck-nav">
+    <button class="tab is-on" data-view="floor"><i>01</i><span data-i18n="nav.floor">OPS FLOOR</span></button>
+    <button class="tab" data-view="arcade"><i>02</i><span data-i18n="nav.arcade">ARCADE</span></button>
+    <button class="tab" data-view="ipo"><i>03</i><span data-i18n="nav.ipo">IPO</span></button>
+    <button class="tab" data-view="sys"><i>04</i><span data-i18n="nav.sys">SYSTEM</span></button>
+  </nav>
 
-        <h2 class="panel-title mt"><span class="dot dot-em"></span><span data-i18n="prestige_title">IPO — Go Public</span></h2>
-        <div class="prestige-box">
-          <p data-i18n="prestige_desc">Reset the company and issue Executive Shares.</p>
-          <div class="prestige-row">
-            <div class="prestige-meta">
-              <span data-i18n="shares">Exec Shares</span>: <b id="pgShares">0</b> &nbsp;·&nbsp;
-              <span data-i18n="prestige_bonus">Prestige Bonus</span>: <b id="pgBonus">×1.00</b>
+  <main id="deck">
+
+    <!-- ───── 01 OPS FLOOR ───── -->
+    <section class="view is-on" id="view-floor">
+      <div class="floor-grid">
+
+        <div class="panel panel-term">
+          <div class="panel-hd" data-i18n="floor.term">MAIN TERMINAL</div>
+          <div class="term-body">
+            <div class="term-screen">
+              <pre id="term-out" class="term-out"></pre>
             </div>
-            <button class="btn btn-prestige" id="btnPrestige" data-i18n="prestige_go">File IPO &amp; Reset</button>
-          </div>
-          <div class="prestige-prog"><i id="pgFill"></i></div>
-          <div class="prestige-hint" id="pgHint" data-i18n="prestige_req">Requires $1.00M net worth</div>
-        </div>
-      </section>
-    </div>
-  </section>
-
-  <!-- ══════════ ARCADE ══════════ -->
-  <section class="view" id="view-arcade">
-    <h1 class="view-title" data-i18n="arcade_title">Arcade Work Hub</h1>
-    <p class="view-sub" data-i18n="arcade_sub">Play a mini-game → score becomes instant cash + 5 min Overclock boost</p>
-
-    <div class="arcade-lock glass" id="arcadeLock">
-      <span class="lock-icon">🔒</span>
-      <p data-i18n="arcade_locked">Reach $10K cash to unlock the Arcade Hub</p>
-      <div class="lock-prog"><i id="lockFill"></i></div>
-    </div>
-
-    <div class="arc-grid" id="arcGrid"></div>
-
-    <div class="play-stage" id="playStage" hidden>
-      <div class="stage-bar glass">
-        <div class="stage-title">
-          <b id="stageName">—</b>
-          <small id="stageHow" data-i18n="how_to">Controls</small>
-        </div>
-        <div class="stage-score">
-          <span data-i18n="score">Score</span>: <b id="stageScore">0</b>
-          &nbsp;·&nbsp;
-          <span data-i18n="high_score">Best</span>: <b id="stageBest">0</b>
-        </div>
-        <div class="stage-btns">
-          <button class="btn btn-ghost" id="btnRestart" data-i18n="restart">Restart</button>
-          <button class="btn btn-danger" id="btnExit" data-i18n="exit_game">Exit</button>
-        </div>
-      </div>
-      <div class="canvas-wrap">
-        <canvas id="gameCanvas" width="640" height="480"></canvas>
-        <div class="stage-over glass" id="stageOver" hidden>
-          <h3 data-i18n="game_over">Game Over</h3>
-          <div class="over-rows">
-            <div><span data-i18n="score">Score</span><b id="ovScore">0</b></div>
-            <div><span data-i18n="high_score">Best</span><b id="ovBest">0</b></div>
-            <div class="ov-cash"><span data-i18n="cash_earned">Cash Earned</span><b id="ovCash">$0</b></div>
-          </div>
-          <div class="over-btns">
-            <button class="btn" id="ovRetry" data-i18n="restart">Restart</button>
-            <button class="btn btn-ghost" id="ovBack" data-i18n="back">Back to HQ</button>
+            <button id="btn-term" class="big-key" type="button">
+              <span class="bk-l1" data-i18n="floor.run">EXECUTE</span>
+              <span class="bk-l2" data-i18n="floor.runSub">WRITE CODE / CLOSE DEAL</span>
+            </button>
+            <div class="combo-rail"><i id="combo-fill"></i></div>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ══════════ LEDGER ══════════ -->
-  <section class="view" id="view-ledger">
-    <h1 class="view-title" data-i18n="nav_ledger">Ledger</h1>
-    <div class="cols">
-      <section class="panel">
-        <h2 class="panel-title"><span class="dot dot-em"></span>Games Played</h2>
-        <div class="tbl" id="ledgerGames"></div>
-      </section>
-      <section class="panel">
-        <h2 class="panel-title"><span class="dot dot-in"></span>Corporate</h2>
-        <div class="tbl" id="ledgerCorp"></div>
-      </section>
-    </div>
-  </section>
-
-  <!-- ══════════ SETTINGS ══════════ -->
-  <section class="view" id="view-settings">
-    <h1 class="view-title" data-i18n="settings_title">Settings</h1>
-    <section class="panel">
-      <div class="set-list">
-        <label class="set-row">
-          <span data-i18n="sound">Sound Effects</span>
-          <input type="checkbox" id="setSfx" checked>
-        </label>
-        <label class="set-row">
-          <span data-i18n="music">Music</span>
-          <input type="checkbox" id="setMusic">
-        </label>
-        <label class="set-row">
-          <span data-i18n="language">Language</span>
-          <select id="setLang">
-            <option value="en">English</option>
-            <option value="ar">العربية</option>
-          </select>
-        </label>
-        <div class="set-row">
-          <span data-i18n="offline_cap">Offline cap</span>
-          <b>8h · 50%</b>
+        <div class="panel panel-flow">
+          <div class="panel-hd" data-i18n="floor.flow">REVENUE STREAM</div>
+          <div class="flow-list" id="dept-list"></div>
         </div>
+
+        <div class="panel panel-gear">
+          <div class="panel-hd" data-i18n="floor.gear">EQUIPMENT</div>
+          <div class="gear-grid" id="gear-grid"></div>
+        </div>
+
+        <div class="panel panel-exec">
+          <div class="panel-hd" data-i18n="floor.exec">EXECUTIVES</div>
+          <div class="exec-grid" id="exec-grid"></div>
+        </div>
+
       </div>
-      <div class="set-btns">
-        <button class="btn btn-ghost" id="btnExport" data-i18n="export_save">Export Save</button>
-        <button class="btn btn-ghost" id="btnImport" data-i18n="import_save">Import Save</button>
-        <button class="btn btn-danger" id="btnReset" data-i18n="reset_save">Hard Reset</button>
-      </div>
-      <textarea id="saveBox" class="save-box" spellcheck="false" rows="4"
-        placeholder="Paste save string here, then press Import Save…"></textarea>
     </section>
-  </section>
-</main>
 
-<!-- ══════════ MODALS ══════════ -->
-<div class="modal-back hidden" id="modalBack">
-  <div class="modal glass" id="modal">
-    <h3 id="modalTitle">—</h3>
-    <p id="modalBody">—</p>
-    <div class="modal-btns">
-      <button class="btn btn-ghost" id="modalNo" data-i18n="cancel">Cancel</button>
-      <button class="btn" id="modalYes" data-i18n="confirm">Confirm</button>
+    <!-- ───── 02 ARCADE ───── -->
+    <section class="view" id="view-arcade">
+      <div class="arc-head">
+        <div class="panel-hd flat" data-i18n="arc.title">ARCADE FLOOR · 20 CABINETS</div>
+        <p class="arc-note" data-i18n="arc.note">Score converts to instant cash. Every finished run powers the company for 5 minutes.</p>
+      </div>
+      <div class="cab-grid" id="cab-grid"></div>
+    </section>
+
+    <!-- ───── 03 IPO ───── -->
+    <section class="view" id="view-ipo">
+      <div class="ipo-wrap">
+        <div class="panel">
+          <div class="panel-hd" data-i18n="ipo.hd">GOING PUBLIC</div>
+          <div class="ipo-body">
+            <div class="ipo-figures">
+              <div><span data-i18n="ipo.worth">NET WORTH</span><b id="ipo-worth">$0</b></div>
+              <div><span data-i18n="ipo.shares">SHARES HELD</span><b id="ipo-shares">0</b></div>
+              <div><span data-i18n="ipo.mult">GLOBAL MULT</span><b id="ipo-mult">x1.00</b></div>
+              <div><span data-i18n="ipo.next">NEXT PAYOUT</span><b id="ipo-next">+0</b></div>
+              <div><span data-i18n="ipo.count">IPO COUNT</span><b id="ipo-count">0</b></div>
+            </div>
+            <button id="btn-ipo" class="big-key ipo-key" type="button">
+              <span class="bk-l1" data-i18n="ipo.btn">FILE IPO</span>
+              <span class="bk-l2" data-i18n="ipo.btnSub">RESET COMPANY · KEEP SHARES</span>
+            </button>
+            <div class="ipo-lore" data-i18n="ipo.lore"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── 04 SYSTEM ───── -->
+    <section class="view" id="view-sys">
+      <div class="sys-grid">
+        <div class="panel">
+          <div class="panel-hd" data-i18n="sys.save">SAVE DATA</div>
+          <div class="sys-body">
+            <div class="kv"><span data-i18n="sys.updated">LAST SYNC</span><b id="sys-saved">—</b></div>
+            <div class="kv"><span data-i18n="sys.version">SAVE SCHEMA</span><b id="sys-ver">—</b></div>
+            <div class="kv"><span data-i18n="sys.runs">CABINET RUNS</span><b id="sys-runs">0</b></div>
+            <div class="kv"><span data-i18n="sys.points">TOTAL POINTS</span><b id="sys-points">0</b></div>
+            <div class="btn-row">
+              <button class="btn" id="btn-export" data-i18n="sys.export">EXPORT JSON</button>
+              <button class="btn" id="btn-import" data-i18n="sys.import">IMPORT JSON</button>
+              <button class="btn btn-warn" id="btn-wipe" data-i18n="sys.wipe">HARD RESET</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd" data-i18n="sys.top">TOP CABINET SCORES</div>
+          <div class="sys-body"><ol class="top-list" id="top-list"></ol></div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd" data-i18n="sys.doc">ABOUT THIS BUILD</div>
+          <div class="sys-body">
+            <p class="doc" data-i18n="sys.docBody"></p>
+            <div class="kv"><span data-i18n="sys.dt">FRAME CLAMP</span><b>0.033 s</b></div>
+            <div class="kv"><span data-i18n="sys.sub">SUB-STEPS</span><b>4 × &gt;400 px/s</b></div>
+            <div class="kv"><span data-i18n="sys.canv">GAME PLANE</span><b>480 × 360</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer id="statusbar">
+    <span id="sb-left">NEXUS//CORP v2</span>
+    <span id="sb-mid"></span>
+    <span id="sb-right"></span>
+  </footer>
+</div>
+
+<!-- ══════════ ARCADE CABINET ══════════ -->
+<div id="cabinet" hidden>
+  <div class="cab">
+    <div class="cab-marquee">
+      <span class="cab-title" id="cab-title">—</span>
+      <button class="cab-close" id="cab-exit" title="Eject" aria-label="Eject">⏏</button>
+    </div>
+    <div class="cab-screen">
+      <canvas id="screen" width="480" height="360" aria-label="Game screen"></canvas>
+      <div class="scan"></div>
+      <div class="cab-overlay" id="cab-overlay" hidden>
+        <div class="ov-hd" id="ov-kind">RUN COMPLETE</div>
+        <div class="ov-rows">
+          <div><span data-i18n="ov.score">SCORE</span><b id="ov-score">0</b></div>
+          <div><span data-i18n="ov.best">BEST</span><b id="ov-best">0</b></div>
+          <div><span data-i18n="ov.cash">CREDITED</span><b id="ov-cash">$0</b></div>
+        </div>
+        <div class="ov-btns">
+          <button class="btn btn-go" id="ov-again" data-i18n="ov.again">RUN AGAIN</button>
+          <button class="btn" id="ov-out" data-i18n="ov.out">BACK TO FLOOR</button>
+        </div>
+      </div>
+    </div>
+    <div class="cab-foot">
+      <span class="cab-hint" id="cab-hint"></span>
+      <span class="cab-meter">POINTS <b id="cab-score">0</b></span>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<!-- ══════════ MODAL VEIL ══════════ -->
+<div id="veil" hidden>
+  <div class="veil-card" role="dialog" aria-modal="true">
+    <div class="veil-hd" id="veil-hd">—</div>
+    <div class="veil-body" id="veil-body"></div>
+    <div class="veil-foot" id="veil-foot"></div>
+  </div>
+</div>
 
-<script type="module" src="src/main.js"></script>
+<div id="pip" class="pip" aria-live="polite"></div>
+
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

@@ -1,0 +1,195 @@
+/* ══════════════════════════════════════════════════════════════
+   shell layer — splash, topbar, nav, deck, views, status bar
+   ══════════════════════════════════════════════════════════════ */
+
+/* ─────────────── BOOT SPLASH ─────────────── */
+#splash{
+  position:fixed; inset:0; z-index:400;
+  display:grid; place-items:center;
+  background:#07060A;
+  transition:opacity .45s var(--ease);
+}
+#splash.out{opacity:0;pointer-events:none}
+.splash-inner{width:min(760px,92vw);text-align:center}
+
+.splash-logo{
+  margin:0;
+  font-size:clamp(9px,2.1vw,20px);
+  line-height:1.08;
+  color:var(--amber);
+  text-shadow:0 0 22px rgba(255,176,0,.4);
+  letter-spacing:.02em;
+  white-space:pre;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.splash-logo::-webkit-scrollbar{display:none}
+
+.splash-sub{
+  margin-top:14px;
+  font-size:11px; letter-spacing:.34em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+html[dir="rtl"] .splash-sub{letter-spacing:.06em}
+
+.boot-bar{
+  margin:26px auto 0; height:10px; max-width:460px;
+  background:var(--s1); border:2px solid var(--ln);
+}
+.boot-bar>i{
+  display:block; height:100%; width:0%;
+  background:repeating-linear-gradient(90deg,var(--amber) 0 8px,#C98600 8px 12px);
+  transition:width .18s linear;
+}
+
+.boot-log{
+  margin-top:14px; height:16px;
+  font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--phos); opacity:.75;
+}
+
+/* ─────────────── SHELL ─────────────── */
+#shell{
+  position:relative; z-index:1;
+  min-height:100dvh;
+  display:flex; flex-direction:column;
+}
+
+/* ─────────────── TOPBAR ─────────────── */
+#topbar{
+  position:sticky; top:0; z-index:60;
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center; gap:var(--gut);
+  min-height:var(--bar-h);
+  padding:6px var(--gut);
+  background:var(--s1);
+  border-bottom:2px solid var(--ln);
+}
+
+.brand{display:flex; align-items:center; gap:8px; white-space:nowrap}
+.brand-mark{
+  display:grid; place-items:center;
+  width:28px; height:28px;
+  background:var(--amber); color:#0B0A07;
+  font-weight:800; font-size:12px; letter-spacing:.02em;
+}
+.brand-name{font-weight:800; font-size:13px; letter-spacing:.1em}
+.brand-name em{font-style:normal; color:var(--amber)}
+.brand-tick{
+  width:7px; height:7px; background:var(--phos);
+  box-shadow:0 0 8px rgba(55,245,124,.8);
+  animation:tick 1.9s steps(1,end) infinite;
+}
+@keyframes tick{0%,60%{opacity:1}61%,100%{opacity:.18}}
+
+.gauges{
+  display:flex; align-items:stretch; gap:0;
+  overflow-x:auto; scrollbar-width:none;
+  border:2px solid var(--ln); background:var(--s0);
+}
+.gauges::-webkit-scrollbar{display:none}
+.gauge{
+  flex:1 0 auto;
+  display:flex; flex-direction:column; justify-content:center;
+  padding:5px 11px;
+  border-left:2px solid var(--ln);
+  min-width:96px;
+}
+.gauge:first-child{border-left:0}
+.g-lbl{font-size:9px; letter-spacing:.15em; color:var(--ink-3); font-weight:700}
+.gauge b{font-size:13px; font-variant-numeric:tabular-nums; color:var(--ink)}
+.gauge[data-k="cash"] b{color:var(--phos)}
+.gauge[data-k="flow"] b{color:var(--cyan)}
+.gauge[data-k="shares"] b{color:var(--violet)}
+.gauge-x b{color:var(--amber)}
+
+.ops{display:flex; align-items:center; gap:6px}
+
+.oc-chip{
+  display:flex; align-items:center; gap:6px;
+  padding:4px 9px;
+  border:2px solid var(--amber);
+  background:rgba(255,176,0,.12);
+  font-size:10px; letter-spacing:.12em; font-weight:700; color:var(--amber);
+}
+.oc-chip b{font-variant-numeric:tabular-nums}
+
+.ico{
+  height:28px; min-width:34px; padding:0 8px;
+  background:var(--s3); color:var(--ink-2);
+  border:2px solid var(--ln); border-radius:var(--r);
+  font-family:var(--ff); font-size:10px; font-weight:800; letter-spacing:.08em;
+  cursor:pointer;
+  transition:background .12s,color .12s,border-color .12s;
+}
+.ico:hover{background:var(--s4); color:var(--ink)}
+.ico[aria-pressed="false"]{color:var(--ink-3); text-decoration:line-through}
+.ico[data-on="1"]{border-color:var(--amber); color:var(--amber)}
+
+/* ─────────────── NAV ─────────────── */
+#deck-nav{
+  position:sticky; top:var(--bar-h); z-index:55;
+  display:flex; min-height:var(--nav-h);
+  background:var(--s1);
+  border-bottom:2px solid var(--ln);
+  overflow-x:auto; scrollbar-width:none;
+}
+#deck-nav::-webkit-scrollbar{display:none}
+
+.tab{
+  flex:1 0 auto;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  padding:0 16px; min-height:var(--nav-h);
+  background:transparent; color:var(--ink-3);
+  border:0; border-right:2px solid var(--ln);
+  border-bottom:2px solid transparent;
+  font-family:var(--ff); font-size:11px; font-weight:800; letter-spacing:.14em;
+  cursor:pointer;
+  transition:color .12s,background .12s;
+}
+.tab:last-child{border-right:0}
+.tab i{font-style:normal; font-size:9px; opacity:.5}
+.tab:hover{color:var(--ink-2); background:var(--s2)}
+.tab.is-on{
+  color:var(--amber);
+  background:var(--s0);
+  border-bottom-color:var(--amber);
+}
+.tab.is-on i{opacity:1}
+html[dir="rtl"] .tab{letter-spacing:0}
+
+/* ─────────────── DECK ─────────────── */
+#deck{
+  flex:1;
+  padding:var(--gut);
+  max-width:1320px; width:100%; margin:0 auto;
+}
+.view{display:none}
+.view.is-on{display:block; animation:viewin .18s var(--ease)}
+@keyframes viewin{from{opacity:0; transform:translateY(4px)}to{opacity:1; transform:none}}
+
+/* ─────────────── STATUS BAR ─────────────── */
+#statusbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:5px var(--gut);
+  background:var(--s1); border-top:2px solid var(--ln);
+  font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3);
+}
+html[dir="rtl"] #statusbar{letter-spacing:0}
+#sb-mid{flex:1; text-align:center; color:var(--ink-2)}
+#sb-right{font-variant-numeric:tabular-nums}
+
+/* ─────────────── RESPONSIVE ─────────────── */
+@media (max-width:900px){
+  #topbar{grid-template-columns:1fr auto; gap:6px}
+  .gauges{grid-column:1 / -1; order:3}
+  .brand-name{display:none}
+}
+@media (max-width:560px){
+  .tab span{display:none}
+  .tab{flex:1 0 0; min-width:52px}
+  #deck{padding:8px}
+  .gauge{min-width:84px; padding:4px 8px}
+  #statusbar{font-size:9px}
+}

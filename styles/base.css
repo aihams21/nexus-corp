@@ -1,0 +1,131 @@
+/* ══════════════════════════════════════════════════════════════
+   NEXUS//CORP — base layer
+   Design language: "Ops Deck" — brutalist CRT / industrial terminal.
+   Hard 2px borders, hard offset shadows, monospace-forward,
+   zero border-radius on structural chrome, phosphor accents.
+   ══════════════════════════════════════════════════════════════ */
+
+:root{
+  /* surfaces — warm near-blacks, layered like real instrument panels */
+  --s0:#0B0A07;          /* chassis */
+  --s1:#14120C;          /* panel */
+  --s2:#1C1913;          /* raised panel */
+  --s3:#262117;          /* input wells */
+  --s4:#332C1E;          /* hover */
+
+  /* ink */
+  --ink:#EDE6D6;
+  --ink-2:#A79C82;
+  --ink-3:#6E6552;
+
+  /* signal colours */
+  --amber:#FFB000;
+  --phos:#37F57C;
+  --cyan:#25D0FF;
+  --alert:#FF3B47;
+  --gold:#FFD24A;
+  --violet:#9D7BFF;
+
+  /* lines */
+  --ln:#3A3323;
+  --ln-2:#4C4229;
+  --ln-hot:var(--amber);
+
+  /* metrics */
+  --hard:4px;                       /* hard shadow offset */
+  --r:2px;                           /* structural radius */
+  --nav-h:52px;
+  --bar-h:56px;
+  --gut:10px;
+  --mono:"JetBrains Mono","JetBrains Mono Fallback",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ar:"Noto Kufi Arabic","JetBrains Mono",ui-monospace,system-ui,sans-serif;
+  --ff:var(--mono);
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+
+html,body{height:100%}
+
+body{
+  margin:0;
+  background:var(--s0);
+  color:var(--ink);
+  font-family:var(--ff);
+  font-size:14px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none;
+  overflow-x:hidden;
+}
+
+html[dir="rtl"] body{font-family:var(--ar)}
+html[dir="rtl"]{--ff:var(--ar)}
+
+/* page-level depth: a slow phosphor wash so flat panels sit in space */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(1200px 620px at 78% -10%, rgba(255,176,0,.075), transparent 62%),
+    radial-gradient(900px 520px at 8% 106%, rgba(55,245,124,.05), transparent 60%),
+    linear-gradient(180deg,#0B0A07 0%,#0E0C08 100%);
+}
+
+/* ── CRT treatment: scanlines + vignette + faint aperture grille ── */
+.crt{
+  position:fixed; inset:0; z-index:9000; pointer-events:none;
+  mix-blend-mode:multiply;
+  background:
+    repeating-linear-gradient(0deg,rgba(0,0,0,.24) 0 1px,rgba(0,0,0,0) 1px 3px);
+  opacity:.5;
+}
+.crt::after{
+  content:"";
+  position:absolute; inset:0;
+  background:radial-gradient(130% 100% at 50% 50%,transparent 52%,rgba(0,0,0,.55) 100%);
+  mix-blend-mode:normal;
+}
+
+/* ── typography primitives ── */
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+b,strong{font-weight:800}
+
+.lbl,.micro{
+  font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+}
+html[dir="rtl"] .micro{letter-spacing:0}
+
+/* every number in the app is tabular so digits never jitter */
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+/* ── shared focus ring: chunky, unmistakable ── */
+:where(button,[tabindex],input,select,textarea):focus-visible{
+  outline:2px solid var(--amber);
+  outline-offset:2px;
+}
+
+/* ── scrollbars, matched to chassis ── */
+*::-webkit-scrollbar{width:11px;height:11px}
+*::-webkit-scrollbar-track{background:var(--s0)}
+*::-webkit-scrollbar-thumb{background:var(--ln-2);border:3px solid var(--s0)}
+*::-webkit-scrollbar-thumb:hover{background:var(--amber)}
+
+::selection{background:var(--amber);color:#0B0A07}
+
+/* ── reduced motion: kill decorative loops, keep functional ones ── */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+}
+
+/* ── small screens: compress the type scale rather than reflow the shell ── */
+@media (max-width:720px){
+  body{font-size:13px}
+  :root{--gut:8px;--bar-h:auto}
+}
+
+/* utility */
+[hidden]{display:none !important}
+.nowrap{white-space:nowrap}

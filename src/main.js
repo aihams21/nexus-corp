@@ -1,755 +1,826 @@
-/* =============================================================
-   NEXUS CORP — UI WIRING  (src/main.js)
-   Boots the shell, drives the tycoon simulation, renders every
-   card/grid, and mounts the Arcade Hub. Zero framework.
-   ============================================================= */
+/* Nexus Corp: Empire & Arcade — OPS DECK build.
+ * Boot, shell rendering, tycoon wiring, cabinet host, persistence, bilingual toggle. */
 
+import { clamp, clamp01, mmss } from './core/math.js';
+import { cash, points, mult } from './core/money.js';
+import { TOPIC, emit } from './core/bus.js';
+import { createLoop, MAX_DT } from './core/engine.js';
+import sfx from './core/sfx.js';
 import {
-  S, on, tick as simTick, doClick, addCash,
-  buyDepartment, buyUpgrade, hireManager, doPrestige,
-  submitArcadeScore, applyOffline, saveNow, startAutosave,
-  totalIncomePerSec, deptIncomePerSec, netWorth, clickPower,
-  globalMultiplier, arcadeUnlocked,
-  overclockRemainingMs, prestigeReady, prestigeGain, prestigeProgress,
-  migrate, defaultState,
-  ARCADE_UNLOCK_CASH, COMBO_MAX
-} from './core/state.js';
-
-import { nowMs, exportSave, importSave, clearSave } from './core/storage.js';
-import { audio } from './core/audio.js';
+  t, applyDom, setLang, getLang, toggleLang, isRTL, pick,
+} from './core/strings.js';
 import {
-  formatMoney, formatRate, formatNum, formatMult,
-  formatDuration, formatDurationLong, formatPct
-} from './core/format.js';
-import { setLang, getLang, toggleLang, t, gameName, gameHowTo, applyI18n } from './core/i18n.js';
+  AUTOSAVE_MS, startAutosave, loadRaw, exportSave, importSave,
+  clearSave, describeSave, computeOfflineEarnings,
+  OFFLINE_CAP_SECONDS, OFFLINE_EFFICIENCY,
+} from './core/save.js';
+import store, { S } from './tycoon/store.js';
+import {
+  DEPTS, DEPT_IDS, MILESTONES, OVERCLOCK_MS, COMBO_MAX,
+  deptCost, deptLevel, deptOutput, netWorth, baseFlow, incomePerSec,
+  hitValue, comboCount, overclockFactor, overclockLeft, overclockActive,
+  doHit, buyDept, deptUnlocked, scoreToCash, grantOverclock,
+  nextMilestone, milestoneProgress,
+} from './tycoon/ledger.js';
+import { GEAR, GEAR_IDS, gearLevel, gearCost, gearIsMaxed, buyGear } from './tycoon/gear.js';
+import { EXECS, EXEC_IDS, isHired, execVisible, hireExec, hasAutoGear, hasAutoHit, fullyAutonomous } from './tycoon/execs.js';
+import { sharesMult, ipoPreview, doIpo } from './tycoon/ipo.js';
+import { createMachine, PLANE_W, PLANE_H } from './arcade/machine.js';
+import { GAMES, TOTAL_GAMES, cabinetUnlocked, drawPoster, gameById } from './arcade/registry.js';
 
-import { DEPARTMENTS, DEPT_BY_ID, deptCost, deptBulkCost, deptRate, milestoneInfo, isDeptUnlocked, milestoneMultiplier, MILESTONES } from './tycoon/departments.js';
-import { UPGRADES, upgradeCost } from './tycoon/upgrades.js';
-import { MANAGER_BY_DEPT, managerCost } from './tycoon/managers.js';
-import { PRESTIGE_REQUIREMENT } from './tycoon/prestige.js';
-import { ArcadeHub, GAMES, loadGame, preloadAll } from './arcade/arcade_hub.js';
-
-/* ---------------- tiny DOM helpers ---------------- */
+/* ── element handles ───────────────────────────────────────────────────── */
 const $ = (sel) => document.querySelector(sel);
-const el = (tag, cls, txt) => {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (txt != null) n.textContent = txt;
-  return n;
-};
-const show = (node, on_) => { if (node) node.hidden = !on_; };
-
-/* bilingual department labels (data module carries no names) */
-const DEPT_NAMES = {
-  freelancer:   ['Garage Freelancer',        'مستقل المرآب'],
-  agency:      ['Indie Web Agency',         'وكالة ويب مستقلة'],
-  mobile:      ['Mobile App Studio',        'استوديو تطبيقات الجوال'],
-  saas:        ['SaaS Cloud Platform',      'منصة سحابية SaaS'],
-  cyber:       ['Cybersecurity Division',   'قسم الأمن السيبراني'],
-  ailab:       ['AI Research Lab',          'مختبر أبحاث الذكاء الاصطناعي'],
-  quantum:     ['Quantum Computing Facility','منشأة الحوسبة الكمّية'],
-  robotics:    ['Autonomous Robotics Plant','مصنع الروبوتات المستقلة'],
-  orbital:     ['Orbital Satellite Network','شبكة الأقمار المدارية'],
-  singularity: ['Global Neural Singularity','التفرّد العصبي العالمي']
-};
-const deptName = (id) => {
-  const n = DEPT_NAMES[id];
-  if (!n) return id;
-  return getLang() === 'ar' ? n[1] : n[0];
-};
-
-/* ---------------- element cache ---------------- */
-const UI = {
-  boot: $('#boot'), bootBar: $('.boot-bar > i'),
-  stCash: $('#stCash'), stRate: $('#stRate'), stWorth: $('#stWorth'),
-  stClick: $('#stClick'), stShares: $('#stShares'),
-  ocPill: $('#ocPill'), ocTime: $('#ocTime'),
-  btnLang: $('#btnLang'), btnSound: $('#btnSound'), btnMusic: $('#btnMusic'),
-  tabs: $('#tabs'),
-  terminal: $('#terminal'), termFx: $('#termFx'), termClick: $('.term-click'),
-  comboBar: $('#comboBar'), comboFill: $('#comboFill'), comboTxt: $('#comboTxt'),
-  deptGrid: $('#deptGrid'), upList: $('#upList'), mgrList: $('#mgrList'),
-  pgShares: $('#pgShares'), pgBonus: $('#pgBonus'), btnPrestige: $('#btnPrestige'),
-  pgFill: $('#pgFill'), pgHint: $('#pgHint'),
-  arcadeLock: $('#arcadeLock'), lockFill: $('#lockFill'), arcGrid: $('#arcGrid'),
-  playStage: $('#playStage'), stageName: $('#stageName'), stageHow: $('#stageHow'),
-  stageScore: $('#stageScore'), stageBest: $('#stageBest'),
-  btnRestart: $('#btnRestart'), btnExit: $('#btnExit'),
-  canvas: $('#gameCanvas'),
-  stageOver: $('#stageOver'), ovScore: $('#ovScore'), ovBest: $('#ovBest'),
-  ovCash: $('#ovCash'), ovRetry: $('#ovRetry'), ovBack: $('#ovBack'),
-  ledgerGames: $('#ledgerGames'), ledgerCorp: $('#ledgerCorp'),
-  setSfx: $('#setSfx'), setMusic: $('#setMusic'), setLang: $('#setLang'),
-  btnExport: $('#btnExport'), btnImport: $('#btnImport'), btnReset: $('#btnReset'),
-  saveBox: $('#saveBox'),
-  modalBack: $('#modalBack'), modalTitle: $('#modalTitle'), modalBody: $('#modalBody'),
-  modalNo: $('#modalNo'), modalYes: $('#modalYes'),
-  toast: $('#toast')
+const el = {
+  splash: $('#splash'),
+  bootFill: $('#boot-fill'),
+  bootLog: $('#boot-log'),
+  shell: $('#shell'),
+  gCash: $('#g-cash'), gFlow: $('#g-flow'), gWorth: $('#g-worth'),
+  gHit: $('#g-hit'), gShares: $('#g-shares'), gCombo: $('#g-combo'),
+  ocChip: $('#oc-chip'), ocLeft: $('#oc-left'),
+  btnLang: $('#btn-lang'), btnLangTxt: $('#btn-lang-txt'),
+  btnSfx: $('#btn-sfx'), btnMus: $('#btn-mus'),
+  nav: $('#deck-nav'), deck: $('#deck'),
+  termOut: $('#term-out'), btnTerm: $('#btn-term'), comboFill: $('#combo-fill'),
+  deptList: $('#dept-list'), gearGrid: $('#gear-grid'), execGrid: $('#exec-grid'),
+  cabGrid: $('#cab-grid'),
+  ipoWorth: $('#ipo-worth'), ipoShares: $('#ipo-shares'), ipoMult: $('#ipo-mult'),
+  ipoNext: $('#ipo-next'), ipoCount: $('#ipo-count'), btnIpo: $('#btn-ipo'),
+  sysSaved: $('#sys-saved'), sysVer: $('#sys-version'), sysRuns: $('#sys-runs'),
+  sysPoints: $('#sys-points'), topList: $('#top-list'),
+  cabinet: $('#cabinet'), cabTitle: $('#cab-title'), cabExit: $('#cab-exit'),
+  screen: $('#screen'), cabOverlay: $('#cab-overlay'), ovKind: $('#ov-kind'),
+  ovScore: $('#ov-score'), ovBest: $('#ov-best'), ovCash: $('#ov-cash'),
+  ovAgain: $('#ov-again'), ovOut: $('#ov-out'), cabHint: $('#cab-hint'), cabScore: $('#cab-score'),
+  veil: $('#veil'), veilHd: $('#veil-hd'), veilBody: $('#veil-body'), veilFoot: $('#veil-foot'),
+  pip: $('#pip'),
+  sbLeft: $('#sb-left'), sbMid: $('#sb-mid'), sbRight: $('#sb-right'),
+  tickDot: $('#tick-dot'),
 };
 
-/* ---------------- toast / modal ---------------- */
-let toastTimer = 0;
-function toast(msg, bad) {
-  const n = UI.toast;
-  if (!n) return;
-  n.textContent = msg;
-  n.classList.toggle('bad', !!bad);
-  n.hidden = false;
-  n.style.animation = 'none';
-  void n.offsetWidth;
-  n.style.animation = '';
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { n.hidden = true; }, 2200);
-}
+/* ── shell state ───────────────────────────────────────────────────────── */
+const shell = {
+  view: 'floor',
+  booted: false,
+  liveGame: null,
+  lastRun: null,
+  cardCanvases: new Map(),
+};
 
-let modalResolve = null;
-function openModal(title, bodyHtml, yesLabel) {
-  UI.modalTitle.textContent = title;
-  UI.modalBody.innerHTML = bodyHtml;
-  UI.modalYes.textContent = yesLabel || t('confirm');
-  UI.modalBack.classList.remove('hidden');
-  return new Promise((res) => { modalResolve = res; });
-}
-function closeModal(v) {
-  UI.modalBack.classList.add('hidden');
-  const r = modalResolve;
-  modalResolve = null;
-  if (r) r(v);
-}
-UI.modalNo.addEventListener('click', () => closeModal(false));
-UI.modalYes.addEventListener('click', () => closeModal(true));
-UI.modalBack.addEventListener('click', (e) => { if (e.target === UI.modalBack) closeModal(false); });
-
-/* ---------------- audio unlock on first gesture ---------------- */
-let audioReady = false;
-function unlockAudio() {
-  if (audioReady) return;
-  audioReady = true;
-  audio.unlock();
-  audio.setSfx(S.settings.sfx);
-  audio.setMusic(S.settings.music);
-}
-window.addEventListener('pointerdown', unlockAudio, { once: true });
-window.addEventListener('keydown', unlockAudio, { once: true });
-window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
-
-/* ---------------- tabs ---------------- */
-let currentTab = 'tycoon';
-function setTab(name) {
-  currentTab = name;
-  for (const b of UI.tabs.querySelectorAll('.tab')) {
-    b.classList.toggle('active', b.dataset.tab === name);
-  }
-  for (const v of document.querySelectorAll('.view')) {
-    v.classList.toggle('active', v.id === 'view-' + name);
-  }
-  if (name === 'arcade') hub.resize();
-  if (name === 'ledger') renderLedger();
-  audio.select();
-}
-UI.tabs.addEventListener('click', (e) => {
-  const b = e.target.closest('.tab');
-  if (b) setTab(b.dataset.tab);
+const machine = createMachine({
+  canvas: el.screen,
+  audio: sfx,
+  onScore: (score) => { el.cabScore.textContent = points(score); },
+  onFinish: (score, id, reason) => endRun(score, id, reason),
+  onExit: () => closeCabinet(),
+  onHint: (text) => { el.cabHint.textContent = pick(text) || ''; },
+  onFlash: () => { sfx.play('tick', 0.28); },
+  onBanner: () => {},
+  onStop: () => {},
 });
 
-/* ---------------- HUD ---------------- */
-function renderHud() {
-  UI.stCash.textContent = formatMoney(S.cash);
-  UI.stRate.textContent = formatRate(totalIncomePerSec());
-  UI.stWorth.textContent = formatMoney(netWorth());
-  UI.stClick.textContent = formatMoney(clickPower());
-  UI.stShares.textContent = formatNum(S.shares);
-
-  const ocLeft = overclockRemainingMs(nowMs());
-  if (ocLeft > 0) {
-    UI.ocPill.hidden = false;
-    UI.ocTime.textContent = formatDuration(ocLeft / 1000);
-  } else {
-    UI.ocPill.hidden = true;
-  }
-
-  // combo bar
-  const c = S.combo;
-  if (c > 0) {
-    const p = c / COMBO_MAX;
-    UI.comboBar.classList.add('on');
-    UI.comboFill.style.width = (p * 100).toFixed(1) + '%';
-    UI.comboTxt.textContent = '×' + (1 + c * 0.1).toFixed(1);
-  } else {
-    UI.comboBar.classList.remove('on');
-    UI.comboFill.style.width = '0%';
-  }
-  UI.termClick.textContent = formatMoney(clickPower());
-
-  // arcade lock progress
-  const lockP = Math.min(1, S.cash / ARCADE_UNLOCK_CASH);
-  UI.lockFill.style.width = (lockP * 100).toFixed(1) + '%';
-  UI.arcadeLock.style.display = arcadeUnlocked() ? 'none' : '';
-
-  // prestige
-  const gain = prestigeGain();
-  const prog = prestigeProgress(netWorth());     // 0..1
-  UI.pgShares.textContent = formatNum(S.shares);
-  UI.pgBonus.textContent = '×' + (1 + S.shares * 0.10).toFixed(2);
-  UI.pgFill.style.width = (prog * 100).toFixed(1) + '%';
-  UI.btnPrestige.disabled = !prestigeReady();
-  UI.pgHint.textContent = prestigeReady()
-    ? `+${formatNum(gain)} ${t('shares')}`
-    : `${t('prestige_req')} — ${formatPct(prog * 100)}`;
+/* ── toasts ────────────────────────────────────────────────────────────── */
+function toast(text, tone = 'info') {
+  const node = document.createElement('div');
+  node.className = 'pip-toast';
+  node.dataset.t = tone === 'good' ? 'good' : tone === 'bad' ? 'bad' : tone === 'hot' ? 'hot' : '';
+  node.textContent = text;
+  el.pip.appendChild(node);
+  emit(TOPIC.TOAST, text);
+  setTimeout(() => {
+    node.classList.add('is-out');
+    setTimeout(() => node.remove(), 240);
+  }, 2400);
 }
 
-/* ---------------- tycoon cards (built once, refreshed) ---------------- */
-const deptCards = new Map();
-const upCards = new Map();
-const mgrCards = new Map();
-
-function buildDepartments() {
-  UI.deptGrid.textContent = '';
-  deptCards.clear();
-  for (const def of DEPARTMENTS) {
-    const card = el('div', 'dept');
-    const top = el('div', 'dept-top');
-    top.appendChild(el('span', 'dept-icon', def.icon));
-    const nm = el('span', 'dept-name');
-    top.appendChild(nm);
-    const lv = el('span', 'dept-lv', 'Lv 0');
-    top.appendChild(lv);
-    card.appendChild(top);
-
-    const rate = el('div', 'dept-rate', '—');
-    card.appendChild(rate);
-
-    const mstone = el('div', 'mstone', '—');
-    card.appendChild(mstone);
-
-    const buy = el('button', 'dept-buy');
-    buy.appendChild(el('span', 'buy-label', t('buy')));
-    const cost = el('span', 'buy-cost', '$0');
-    buy.appendChild(cost);
-    card.appendChild(buy);
-
-    const mgr = el('div', 'dept-mgr');
-    const mgrBtn = el('button', '', t('hire'));
-    mgr.appendChild(mgrBtn);
-    card.appendChild(mgr);
-
-    buy.addEventListener('click', () => {
-      const n = buyHeld ? 10 : 1;
-      const r = buyDepartment(def.id, n);
-      if (!r.ok && r.reason === 'funds') { audio.error(); toast(t('cash') + ' — ' + formatMoney(r.cost), true); }
-      refreshTycoon();
-    });
-    mgrBtn.addEventListener('click', () => {
-      const r = hireManager(def.id);
-      if (!r.ok && r.reason === 'funds') { audio.error(); toast(t('cash') + ' — ' + formatMoney(r.cost), true); }
-      refreshTycoon();
-    });
-
-    UI.deptGrid.appendChild(card);
-    deptCards.set(def.id, { card, nm, lv, rate, mstone, buy, cost, mgr, mgrBtn });
+/* ── modal veil ────────────────────────────────────────────────────────── */
+function openVeil({ head, body, value, label, actions }) {
+  el.veilHd.textContent = head;
+  el.veilBody.textContent = '';
+  if (body) {
+    const p = document.createElement('p');
+    p.textContent = body;
+    el.veilBody.appendChild(p);
   }
-}
-
-function refreshDepartments() {
-  for (const def of DEPARTMENTS) {
-    const c = deptCards.get(def.id);
-    if (!c) continue;
-    const lvl = S.deptLevels[def.id] || 0;
-    const unlocked = isDeptUnlocked(def.id, S.deptLevels);
-    const cost1 = deptCost(def, lvl);
-    const cost10 = deptBulkCost(def, lvl, 10);
-    const need = buyHeld ? cost10 : cost1;
-
-    c.nm.textContent = deptName(def.id);
-    c.lv.textContent = t('level') + ' ' + lvl;
-    c.lv.classList.toggle('zero', lvl === 0);
-    c.card.classList.toggle('locked', !unlocked);
-
-    c.rate.textContent = lvl > 0
-      ? formatRate(deptRate(def, lvl))
-      : `${formatRate(def.baseRate)} @ ${t('level')} 1`;
-
-    const mi = milestoneInfo(lvl);
-    if (mi.next) {
-      c.mstone.textContent = `${t('milestone')} ${mi.hits}/${MILESTONES.length} ×${mi.multiplier} · ${mi.next}`;
-      c.mstone.classList.toggle('done', lvl >= mi.next);
-    } else {
-      c.mstone.textContent = `${t('milestone')} MAX ×${mi.multiplier}`;
-      c.mstone.classList.add('done');
+  if (value != null) {
+    const box = document.createElement('div');
+    box.className = 'veil-cta';
+    const b = document.createElement('b');
+    b.textContent = value;
+    const s = document.createElement('span');
+    s.textContent = label || '';
+    box.appendChild(b);
+    box.appendChild(s);
+    el.veilBody.appendChild(box);
+  }
+  el.veilFoot.textContent = '';
+  const list = actions || [];
+  return new Promise((resolve) => {
+    for (const act of list) {
+      const btn = document.createElement('button');
+      btn.className = 'btn' + (act.tone ? ' btn-' + act.tone : '');
+      btn.type = 'button';
+      btn.textContent = act.label;
+      btn.addEventListener('click', () => { closeVeil(); resolve(act.value); });
+      el.veilFoot.appendChild(btn);
     }
-
-    c.buy.textContent = '';
-    c.buy.appendChild(el('span', 'buy-label', unlocked ? (buyHeld ? '×10' : t('buy')) : t('locked')));
-    c.buy.appendChild(el('span', 'buy-cost', formatMoney(need)));
-    c.buy.disabled = !unlocked || S.cash < need;
-    c.card.classList.toggle('afford', unlocked && S.cash >= need);
-
-    const hired = !!S.hired[def.id];
-    c.mgr.classList.toggle('on', hired);
-    c.mgrBtn.textContent = hired ? t('hired') : t('hire');
-    c.mgrBtn.disabled = hired || lvl === 0 || S.cash < managerCost(hiredCount());
-  }
-}
-
-function buildUpgrades() {
-  UI.upList.textContent = '';
-  upCards.clear();
-  for (const up of UPGRADES) {
-    const card = el('div', 'up');
-    card.appendChild(el('span', 'up-ico', up.icon));
-    const mid = el('div', 'up-mid');
-    const nm = el('div', 'up-name');
-    mid.appendChild(nm);
-    mid.appendChild(el('div', 'up-desc', up.desc));
-    card.appendChild(mid);
-    const buy = el('button', 'up-buy');
-    card.appendChild(buy);
-    buy.addEventListener('click', () => {
-      const r = buyUpgrade(up.id);
-      if (!r.ok && r.reason === 'funds') { audio.error(); toast(t('cash') + ' — ' + formatMoney(r.cost), true); }
-      refreshTycoon();
-    });
-    UI.upList.appendChild(card);
-    upCards.set(up.id, { card, nm, buy });
-  }
-}
-
-function refreshUpgrades() {
-  for (const up of UPGRADES) {
-    const c = upCards.get(up.id);
-    if (!c) continue;
-    const lvl = S.upgradeLevels[up.id] || 0;
-    const cost = upgradeCost(up, lvl);
-    c.nm.textContent = `${up.name} ×${Math.pow(up.mult, lvl)}`;
-    c.buy.textContent = formatMoney(cost);
-    c.buy.disabled = S.cash < cost;
-    c.card.classList.toggle('afford', S.cash >= cost);
-  }
-}
-
-function buildManagers() {
-  UI.mgrList.textContent = '';
-  mgrCards.clear();
-  for (const def of DEPARTMENTS) {
-    const m = MANAGER_BY_DEPT[def.id];
-    const card = el('div', 'mgr');
-    card.appendChild(el('span', 'mgr-sigil', m.sigil));
-    const mid = el('div', 'mgr-mid');
-    const ttl = el('div', 'mgr-title');
-    mid.appendChild(ttl);
-    const dp = el('div', 'mgr-dept');
-    mid.appendChild(dp);
-    card.appendChild(mid);
-    const buy = el('button', 'mgr-buy');
-    card.appendChild(buy);
-    buy.addEventListener('click', () => {
-      const r = hireManager(def.id);
-      if (!r.ok && r.reason === 'funds') { audio.error(); toast(t('cash') + ' — ' + formatMoney(r.cost), true); }
-      else if (!r.ok && r.reason === 'already') toast(t('hired'));
-      refreshTycoon();
-    });
-    UI.mgrList.appendChild(card);
-    mgrCards.set(def.id, { card, ttl, dp, buy });
-  }
-}
-
-function refreshManagers() {
-  const cost = managerCost(hiredCount());
-  for (const def of DEPARTMENTS) {
-    const c = mgrCards.get(def.id);
-    if (!c) continue;
-    const m = MANAGER_BY_DEPT[def.id];
-    const hired = !!S.hired[def.id];
-    c.ttl.textContent = getLang() === 'ar' ? m.titleAr : m.title;
-    c.dp.textContent = deptName(def.id) + ' · ' + t('auto_buyer');
-    c.buy.textContent = hired ? t('hired') : formatMoney(cost);
-    c.buy.disabled = hired || S.cash < cost || (S.deptLevels[def.id] || 0) === 0;
-    c.card.classList.toggle('on', hired);
-    c.card.classList.toggle('afford', !hired && S.cash >= cost);
-  }
-}
-
-const hiredCount = () => Object.values(S.hired).filter(Boolean).length;
-
-let buyHeld = false;
-function refreshTycoon() {
-  refreshDepartments();
-  refreshUpgrades();
-  refreshManagers();
-}
-
-/* ---------------- terminal ---------------- */
-function spawnBit(x, y, text) {
-  const bit = el('span', 'fx-bit', text);
-  bit.style.left = x + 'px';
-  bit.style.top = y + 'px';
-  UI.termFx.appendChild(bit);
-  setTimeout(() => bit.remove(), 760);
-}
-UI.terminal.addEventListener('pointerdown', (e) => {
-  unlockAudio();
-  const r = UI.terminal.getBoundingClientRect();
-  const gain = doClick(nowMs());
-  audio.click();
-  spawnBit(e.clientX - r.left - 14, e.clientY - r.top - 10, '+' + formatMoney(gain));
-  renderHud();
-});
-UI.terminal.addEventListener('contextmenu', (e) => e.preventDefault());
-UI.terminal.addEventListener('keydown', () => {});
-UI.terminal.addEventListener('mouseenter', () => audio.tap());
-
-/* x10 bulk-buy: shift-click a department */
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Shift') buyHeld = true;
-  if (e.key === 'Escape') { if (hub.isActive()) exitGame(); else closeModal(false); }
-});
-window.addEventListener('keyup', (e) => { if (e.key === 'Shift') buyHeld = false; });
-
-/* ---------------- prestige ---------------- */
-UI.btnPrestige.addEventListener('click', async () => {
-  if (!prestigeReady()) { audio.error(); toast(t('prestige_req'), true); return; }
-  const gain = prestigeGain();
-  const ok = await openModal(
-    t('prestige_title'),
-    `${t('prestige_desc')}<br><br><b>+${formatNum(gain)}</b> ${t('shares')} → <b>×${(1 + (S.shares + gain) * 0.1).toFixed(2)}</b>`,
-    t('prestige_go')
-  );
-  if (!ok) return;
-  const r = doPrestige();
-  if (r.ok) {
-    toast(`+${formatNum(r.gain)} ${t('shares')}`);
-    renderHud();
-    refreshTycoon();
-    renderLedger();
-    applyI18n(document);
-  }
-});
-
-/* ---------------- arcade ---------------- */
-const hub = new ArcadeHub({
-  canvas: UI.canvas,
-  audio,
-  fx: {
-    toast: (m) => toast(String(m)),
-    flash: () => { /* decorative */ }
-  },
-  onScore: (score, gameId) => {
-    UI.stageScore.textContent = formatNum(score);
-    UI.stageBest.textContent = formatNum(Math.max(S.gameBest[gameId] || 0, score));
-  },
-  onFinish: (score, gameId) => {
-    const res = submitArcadeScore(gameId, score);
-    hub.unmount();
-    UI.ovScore.textContent = formatNum(res.score);
-    UI.ovBest.textContent = formatNum(res.best);
-    UI.ovCash.textContent = formatMoney(res.cash);
-    UI.stageOver.hidden = false;
-    UI.stageScore.textContent = formatNum(res.score);
-    UI.stageBest.textContent = formatNum(res.best);
-    renderHud();
-    refreshTycoon();
-    renderLedger();
-  },
-  onExit: () => {
-    UI.playStage.hidden = true;
-    setTab('arcade');
-  },
-  onError: (msg) => {
-    audio.error();
-    toast(msg, true);
-    UI.playStage.hidden = true;
-  }
-});
-
-let runningGame = null;
-
-/* Test hook: exposed only when the page is opened with ?debug=1 so the
-   end-to-end suite can drive a real game session and assert the payout path. */
-if (new URLSearchParams(location.search).get('debug') === '1') {
-  window.__nexus = {
-    state: S,
-    launch: (id) => launchGame(id),
-    finish: (score) => { if (hub.ctx) hub.ctx.finish(Number(score) || 0); },
-    activeId: () => hub.activeId,
-    submitArcadeScore: (id, score) => submitArcadeScore(id, score),
-  };
-}
-
-async function launchGame(id) {
-  unlockAudio();
-  runningGame = id;
-  show(UI.playStage, true);
-  show(UI.stageOver, false);
-  UI.stageName.textContent = gameName(id);
-  UI.stageHow.textContent = gameHowTo(id);
-  UI.stageScore.textContent = '0';
-  UI.stageBest.textContent = formatNum(S.gameBest[id] || 0);
-  UI.arcGrid.style.display = 'none';
-  const ok = await hub.launch(id);
-  if (!ok && runningGame === id) {
-    show(UI.playStage, false);
-    UI.arcGrid.style.display = '';
-  }
-}
-
-function exitGame() {
-  hub.unmount();
-  runningGame = null;
-  show(UI.stageOver, false);
-  show(UI.playStage, false);
-  UI.arcGrid.style.display = '';
-  renderHud();
-}
-
-UI.btnExit.addEventListener('click', () => { audio.click(); exitGame(); });
-UI.btnRestart.addEventListener('click', () => { audio.click(); if (runningGame) launchGame(runningGame); });
-UI.ovRetry.addEventListener('click', () => { audio.click(); if (runningGame) launchGame(runningGame); });
-UI.ovBack.addEventListener('click', () => { audio.click(); exitGame(); });
-
-function buildArcade() {
-  UI.arcGrid.textContent = '';
-  GAMES.forEach((g, i) => {
-    const card = el('div', 'arc');
-    card.dataset.game = g.id;
-    const top = el('div', 'arc-top');
-    top.appendChild(el('span', 'arc-no', String(i + 1).padStart(2, '0')));
-    const best = el('span', 'arc-best', '');
-    best.dataset.role = 'best';
-    top.appendChild(best);
-    card.appendChild(top);
-    card.appendChild(el('div', 'arc-name', gameName(g.id)));
-    const play = el('button', 'arc-play', t('play'));
-    card.appendChild(play);
-    card.addEventListener('click', () => { audio.select(); launchGame(g.id); });
-    UI.arcGrid.appendChild(card);
-    g._card = card;
-    g._best = best;
+    el.veil.hidden = false;
   });
 }
 
-async function paintAccents() {
-  const mods = await Promise.all(GAMES.map((g) => loadGame(g.id).catch(() => null)));
-  GAMES.forEach((g, i) => {
-    const mod = mods[i];
-    const accent = (mod && mod.accent) || null;
-    if (accent && g._card) g._card.style.setProperty('--ac', accent);
-    if (g._best) g._best.textContent = (S.gameBest[g.id] || 0) > 0 ? '★ ' + formatNum(S.gameBest[g.id]) : '';
-  });
+function closeVeil() {
+  el.veil.hidden = true;
+  el.veilBody.textContent = '';
+  el.veilFoot.textContent = '';
 }
 
-function refreshArcade() {
-  const unlocked = arcadeUnlocked();
+/* ── gauges ────────────────────────────────────────────────────────────── */
+function paintGauges() {
+  const worth = netWorth(S);
+  el.gCash.textContent = cash(S.cash);
+  el.gFlow.textContent = cash(incomePerSec(S)) + '/s';
+  el.gWorth.textContent = cash(worth);
+  el.gHit.textContent = cash(hitValue(S));
+  el.gShares.textContent = String(S.shares);
+  const cc = comboCount(S);
+  el.gCombo.textContent = cc > 1 ? `×${cc}` : '—';
+  const left = overclockLeft(S);
+  el.ocChip.hidden = left <= 0;
+  if (left > 0) el.ocLeft.textContent = mmss(left / 1000);
+  el.tickDot.style.opacity = String(0.35 + 0.65 * clamp01(1 - (worth % 1e6) / 1e6));
+}
+
+/* ── floor view ────────────────────────────────────────────────────────── */
+const LINES = {
+  idle: ['$ ready.', '> awaiting input…', 'boot: ops deck online'],
+  hit: ['$ commit pushed', '> build green', '$ shipped to prod'],
+  deal: ['$ deal closed', '> contract signed', '$ milestone billed'],
+};
+
+let lineIn = 0;
+let lineIx = 0;
+function tickTerminal(dt) {
+  lineIn += dt;
+  if (lineIn < 2.6) return;
+  lineIn = 0;
+  const pool = pick(LINES.idle);
+  el.termOut.textContent = pool[lineIx % pool.length];
+  lineIx++;
+}
+
+function paintCombo() {
+  const cc = comboCount(S);
+  el.comboFill.style.width = `${clamp01(cc / COMBO_MAX) * 100}%`;
+}
+
+function deptRowHTML(d) {
+  const lv = deptLevel(S, d.id);
+  const cost = deptCost(S, d.id);
+  const out = deptOutput(S, d.id);
+  const next = nextMilestone(lv);
+  const prog = milestoneProgress(lv);
+  const locked = !deptUnlocked(S, d.id);
+  const owned = lv > 0;
+  // the buy button must exist from level 0 — otherwise the first tier is unreachable
+  const canBuy = !locked && S.cash >= cost;
+  return `<div class="dept" data-dept="${d.id}">
+    <div class="dept-ic">${d.ic}</div>
+    <div class="dept-b">
+      <span class="dept-n">${pick(d.name)}</span>
+      <span class="dept-s">
+        <small>${owned ? `LV ${lv}` : locked ? 'LOCKED' : `OPEN · LV ${lv}`}</small>
+        <span class="dept-meter"><i style="width:${(prog * 100).toFixed(1)}%"></i></span>
+        <small>${next ? `NEXT 2× @ ${next}` : 'MAX TIER'}</small>
+      </span>
+    </div>
+    <div class="dept-out">
+      <b>${out > 0 ? cash(out) + '/s' : '—'}</b>
+      <button class="btn dept-buy" type="button" data-buy="${d.id}"${canBuy ? '' : ' disabled'}>${cash(cost)}</button>
+    </div>
+  </div>`;
+}
+
+function gearCardHTML(g) {
+  const lv = gearLevel(S, g.id);
+  const maxed = gearIsMaxed(S, g.id);
+  const cost = gearCost(S, g.id);
+  const poor = S.cash < cost;
+  return `<button class="gear${maxed ? ' is-max' : ''}${poor ? ' is-locked' : ''}" type="button" data-gear="${g.id}">
+    <span class="gear-n">${g.ic} ${pick(g.name)}</span>
+    <span class="gear-d">${pick(g.desc)}</span>
+    <span class="gear-f">
+      <span class="gear-lv">LV ${lv}${maxed ? ' MAX' : ''}</span>
+      <span class="gear-cost">${maxed ? '—' : cash(cost)}</span>
+    </span>
+  </button>`;
+}
+
+function execCardHTML(x) {
+  const on = isHired(S, x.id);
+  return `<button class="exec${on ? ' is-on' : ''}${!on && S.cash < x.cost ? ' is-locked' : ''}" type="button" data-exec="${x.id}">
+    <span class="exec-n">${x.ic} ${pick(x.name)}</span>
+    <span class="exec-d">${pick(x.desc)}</span>
+    <span class="exec-f">
+      <span class="exec-tag">${on ? t('floor.execOn') : 'VACANT'}</span>
+      <span class="exec-cost">${on ? 'ACTIVE' : x.cost ? cash(x.cost) : '—'}</span>
+    </span>
+  </button>`;
+}
+
+function paintFloor() {
+  el.deptList.innerHTML = DEPTS.map(deptRowHTML).join('');
+  el.gearGrid.innerHTML = GEAR.map(gearCardHTML).join('');
+  const worth = netWorth(S);
+  el.execGrid.innerHTML = EXECS.filter((x) => execVisible(S, worth)).map(execCardHTML).join('');
+}
+
+/* ── arcade view ───────────────────────────────────────────────────────── */
+function cardHTML(g, index) {
+  const best = S.gameBest[g.id] || 0;
+  const locked = !cabinetUnlocked(S, g.id);
+  return `<div class="cab-card${locked ? ' is-locked' : ''}" data-game="${g.id}" role="button" tabindex="0">
+    <div class="cab-thumb"><canvas data-thumb="${g.id}"></canvas><span class="cab-no">${String(g.no).padStart(2, '0')}</span><span class="cab-best">${best ? 'BEST ' + points(best) : 'NO RUN'}</span></div>
+    <div class="cab-meta">
+      <span class="cab-n">${pick(g.name)}</span>
+      <span class="cab-t">${pick(g.tag)}</span>
+      <span class="cab-d">${pick(g.desc)}</span>
+    </div>
+  </div>`;
+}
+
+function paintArcade() {
+  el.cabGrid.innerHTML = GAMES.map(cardHTML).join('');
+  shell.cardCanvases.clear();
   for (const g of GAMES) {
-    if (!g._card) continue;
-    const best = S.gameBest[g.id] || 0;
-    g._best.textContent = best > 0 ? '★ ' + formatNum(best) : '';
-    g._card.style.opacity = unlocked ? '' : '.42';
-    g._card.style.pointerEvents = unlocked ? '' : 'none';
+    const cv = el.cabGrid.querySelector(`canvas[data-thumb="${g.id}"]`);
+    if (!cv) continue;
+    const box = cv.getBoundingClientRect();
+    const w = Math.max(80, Math.round(box.width)) || 150;
+    const h = Math.max(60, Math.round(box.height)) || 74;
+    cv.width = w;
+    cv.height = h;
+    const g2 = cv.getContext('2d');
+    drawPoster(g2, g.id, w, h);
+    shell.cardCanvases.set(g.id, cv);
   }
 }
 
-/* ---------------- ledger ---------------- */
-function renderLedger() {
-  const rows = (host, arr) => {
-    host.textContent = '';
-    for (const [k, v, hi] of arr) {
-      const r = el('div', 'tbl-row' + (hi ? ' hi' : ''));
-      r.appendChild(el('span', 'k', k));
-      r.appendChild(el('span', 'v', v));
-      host.appendChild(r);
-    }
-  };
-
-  const played = GAMES.filter((g) => (S.gamesPlayed[g.id] || 0) > 0 || (S.gameBest[g.id] || 0) > 0);
-  const gRows = played.length
-    ? played.map((g) => [
-        `${String(GAMES.indexOf(g) + 1).padStart(2, '0')} · ${gameName(g.id)}`,
-        `${formatNum(S.gameBest[g.id] || 0)} · ${formatNum(S.gamesPlayed[g.id] || 0)}×`,
-        (S.gameBest[g.id] || 0) >= 1000
-      ])
-    : [['—', '—', false]];
-  rows(UI.ledgerGames, gRows);
-
-  const deptOwned = DEPARTMENTS.reduce((a, d) => a + (S.deptLevels[d.id] || 0), 0);
-  const deptMax = DEPARTMENTS.reduce((a, d) => a + (S.deptLevels[d.id] || 0) * milestoneMultiplier(S.deptLevels[d.id] || 0), 0);
-  rows(UI.ledgerCorp, [
-    [t('cash'), formatMoney(S.cash), true],
-    [t('per_sec'), formatRate(totalIncomePerSec()), false],
-    [t('net_worth'), formatMoney(netWorth()), false],
-    [t('prestige_bonus'), '×' + (1 + S.shares * 0.1).toFixed(2), false],
-    [t('shares'), formatNum(S.shares), false],
-    ['IPO count', formatNum(S.prestigeCount), false],
-    [t('departments'), `${formatNum(deptOwned)} levels · ${formatNum(deptMax)} ×milestones`, false],
-    [t('managers'), `${formatNum(hiredCount())}/${DEPARTMENTS.length}`, false],
-    ['Clicks', formatNum(S.clickTotal), false],
-    ['Total score', formatNum(Math.round(S.totalScoreAllTime)), false],
-    ['Base rate', formatRate(deptIncomePerSec()), false]
-  ]);
+/* ── ipo view ──────────────────────────────────────────────────────────── */
+function paintIpo() {
+  const pv = ipoPreview(S);
+  el.ipoWorth.textContent = cash(pv.worth);
+  el.ipoShares.textContent = `+${pv.gain}`;
+  el.ipoMult.textContent = mult(pv.mult);
+  el.ipoNext.textContent = pv.nextAt ? cash(pv.nextAt) : '—';
+  el.ipoCount.textContent = String(S.prestigeCount);
+  el.btnIpo.disabled = !pv.ok;
 }
 
-/* ---------------- settings ---------------- */
-UI.setSfx.checked = !!S.settings.sfx;
-UI.setMusic.checked = !!S.settings.music;
-UI.setLang.value = S.lang || 'en';
+/* ── sys view ──────────────────────────────────────────────────────────── */
+function paintSys() {
+  const d = describeSave(S);
+  el.sysSaved.textContent = d.fresh ? t('sys.never') : new Date(d.savedAt).toLocaleString();
+  el.sysVer.textContent = String(d.version);
+  el.sysRuns.textContent = points(d.runs);
+  el.sysPoints.textContent = points(d.points);
+  const rows = GAMES.map((g) => ({ g, best: S.gameBest[g.id] || 0, runs: S.gamesPlayed[g.id] || 0 }))
+    .filter((r) => r.best > 0)
+    .sort((a, b) => b.best - a.best)
+    .slice(0, 8);
+  if (!rows.length) {
+    el.topList.innerHTML = `<li class="empty">${t('sys.noScores')}</li>`;
+  } else {
+    el.topList.innerHTML = rows.map((r) =>
+      `<li><span>${String(r.g.no).padStart(2, '0')} · ${pick(r.g.name)} <small>${r.runs}R</small></span><b>${points(r.best)}</b></li>`).join('');
+  }
+}
 
-UI.setSfx.addEventListener('change', () => {
-  S.settings.sfx = UI.setSfx.checked;
-  audio.setSfx(UI.setSfx.checked);
-  UI.btnSound.classList.toggle('off', !UI.setSfx.checked);
-  if (UI.setSfx.checked) audio.click();
-  saveNow();
-});
-UI.setMusic.addEventListener('change', () => {
-  S.settings.music = UI.setMusic.checked;
-  audio.setMusic(UI.setMusic.checked);
-  UI.btnMusic.classList.toggle('off', !UI.setMusic.checked);
-  saveNow();
-});
-UI.setLang.addEventListener('change', () => {
-  setLang(UI.setLang.value);
-  S.lang = UI.setLang.value;
-  renderAll();
-  saveNow();
-});
+/* ── status bar ────────────────────────────────────────────────────────── */
+function paintStatus() {
+  const parts = [];
+  parts.push(t('sb.dept', { n: DEPT_IDS.filter((id) => deptLevel(S, id) > 0).length }));
+  parts.push(t('sb.gear', { n: GEAR_IDS.filter((id) => gearLevel(S, id) > 0).length }));
+  parts.push(t('sb.exec', { n: EXEC_IDS.filter((id) => isHired(S, id)).length }));
+  if (hasAutoGear(S) && hasAutoHit(S)) parts.push(t('sb.autonomous'));
+  el.sbLeft.textContent = parts.join(' · ');
+  const rate = incomePerSec(S);
+  el.sbMid.textContent = `${cash(rate)}/s ${overclockActive(S) ? '· ' + t('oc.tag') + ' ×' + overclockFactor(S) : ''}`;
+  el.sbRight.textContent = t('sb.frame', { ms: (MAX_DT * 1000).toFixed(0), plane: `${PLANE_W}×${PLANE_H}` });
+}
 
-UI.btnSound.addEventListener('click', () => {
-  unlockAudio();
-  UI.setSfx.checked = !UI.setSfx.checked;
-  UI.setSfx.dispatchEvent(new Event('change'));
-});
-UI.btnMusic.addEventListener('click', () => {
-  unlockAudio();
-  UI.setMusic.checked = !UI.setMusic.checked;
-  UI.setMusic.dispatchEvent(new Event('change'));
-});
-UI.btnLang.addEventListener('click', () => {
-  const next = toggleLang();
-  S.lang = next;
-  UI.setLang.value = next;
-  renderAll();
-  audio.click();
-  saveNow();
-});
+/* ── view switching ────────────────────────────────────────────────────── */
+function showView(name) {
+  shell.view = name;
+  for (const tab of el.nav.querySelectorAll('.tab')) {
+    tab.classList.toggle('is-on', tab.dataset.view === name);
+  }
+  for (const view of el.deck.querySelectorAll('.view')) {
+    view.classList.toggle('is-on', view.id === 'view-' + name);
+  }
+  if (name === 'floor') paintFloor();
+  else if (name === 'arcade') paintArcade();
+  else if (name === 'ipo') paintIpo();
+  else if (name === 'sys') paintSys();
+}
 
-UI.btnExport.addEventListener('click', async () => {
-  const str = exportSave(S);
-  UI.saveBox.value = str;
-  try { await navigator.clipboard.writeText(str); toast(t('copied')); }
-  catch (_) { toast(t('exported')); }
-});
-UI.btnImport.addEventListener('click', async () => {
-  const str = UI.saveBox.value.trim();
-  if (!str) { toast(t('imported_bad'), true); audio.error(); return; }
+/* ── cabinet lifecycle ─────────────────────────────────────────────────── */
+function openCabinet(id) {
+  const g = gameById(id);
+  if (!g) return;
+  if (!cabinetUnlocked(S, id)) {
+    sfx.play('error', 0.6);
+    toast(t('toast.locked'), 'bad');
+    return;
+  }
+  shell.liveGame = id;
+  el.cabTitle.textContent = `${String(g.no).padStart(2, '0')} · ${pick(g.name)}`;
+  el.cabOverlay.hidden = true;
+  el.cabScore.textContent = '0';
+  el.cabHint.textContent = pick(g.hint);
+  el.cabinet.hidden = false;
+  sfx.unlock();
+  machine.mount(id, g.create);
+}
+
+function closeCabinet() {
+  machine.unmount();
+  shell.liveGame = null;
+  el.cabinet.hidden = true;
+  el.cabOverlay.hidden = true;
+}
+
+function endRun(score, id, reason) {
+  const g = gameById(id);
+  const s = Math.max(0, Math.floor(score) || 0);
+  S.totalScoreAllTime += s;
+  S.gamesPlayed[id] = (S.gamesPlayed[id] || 0) + 1;
+  const prev = S.gameBest[id] || 0;
+  if (s > prev) S.gameBest[id] = s;
+  const payout = scoreToCash(s, S);
+  S.cash += payout;
+  grantOverclock(S, OVERCLOCK_MS);
+  store.markDirty();
+  sfx.play('cash', 0.7);
+  emit(TOPIC.CASH, S.cash);
+  el.ovScore.textContent = points(s);
+  el.ovBest.textContent = points(Math.max(prev, s));
+  el.ovCash.textContent = cash(payout);
+  el.ovKind.textContent = t('ov.title') + ' · ' + (reason ? reason.toUpperCase() : 'DONE');
+  el.cabOverlay.hidden = false;
+  shell.lastRun = { id, score: s, payout, name: g ? pick(g.name) : id };
+  paintStatus();
+  emit(TOPIC.SCORE, { id, score: s });
+}
+
+/* ── actions ───────────────────────────────────────────────────────────── */
+function pressTerminal() {
+  const before = S.cash;
+  const res = doHit(S);
+  S.cash = res.gain != null ? before + res.gain : before;
+  store.markDirty();
+  sfx.play(res.combo >= 8 ? 'power' : 'cash', 0.5);
+  el.btnTerm.classList.add('is-hit');
+  setTimeout(() => el.btnTerm.classList.remove('is-hit'), 170);
+  paintCombo();
+  emit(TOPIC.COMBO, res.combo);
+}
+
+function buyDeptById(id) {
+  const r = buyDept(S, id);
+  if (r.ok) {
+    sfx.play('buy', 0.6);
+    store.markDirty();
+    const d = DEPTS.find((x) => x.id === id);
+    toast(t('toast.bought', { name: pick(d.name), level: r.level }), 'good');
+    if (MILESTONES.includes(r.level)) toast(t('toast.milestone', { level: r.level }), 'hot');
+    emit(TOPIC.DEPT, id);
+  } else if (r.reason === 'funds') {
+    sfx.play('error', 0.5);
+    toast(t('toast.need'), 'bad');
+  }
+  paintFloor();
+}
+
+function buyGearById(id) {
+  const r = buyGear(S, id);
+  if (r.ok) {
+    sfx.play('buy', 0.6);
+    store.markDirty();
+    const g = GEAR.find((x) => x.id === id);
+    toast(t('toast.bought', { name: pick(g.name), level: r.level }), 'good');
+    if (gearIsMaxed(S, id)) toast(t('toast.maxed'), 'hot');
+    emit(TOPIC.GEAR, id);
+  } else if (r.reason === 'funds') {
+    sfx.play('error', 0.5);
+    toast(t('toast.need'), 'bad');
+  }
+  paintFloor();
+}
+
+function hireById(id) {
+  const r = hireExec(S, id);
+  if (r.ok) {
+    sfx.play('level', 0.7);
+    store.markDirty();
+    const x = EXECS.find((e) => e.id === id);
+    toast(t('toast.hired', { name: pick(x.name) }), 'good');
+    if (fullyAutonomous(S)) toast(t('toast.autonomous'), 'hot');
+    emit(TOPIC.EXEC, id);
+  } else if (r.reason === 'funds') {
+    sfx.play('error', 0.5);
+    toast(t('toast.need'), 'bad');
+  }
+  paintFloor();
+}
+
+async function runIpo() {
+  const pv = ipoPreview(S);
+  if (!pv.ok) {
+    sfx.play('error', 0.5);
+    toast(t('toast.ipoLocked'), 'bad');
+    return;
+  }
+  const ok = await openVeil({
+    head: t('modal.ipoTitle'),
+    body: t('modal.ipoBody'),
+    value: `+${pv.gain} ${t('ipo.shares')}`,
+    actions: [
+      { label: t('modal.cancel'), value: false },
+      { label: t('modal.ipoOk'), value: true, tone: 'go' },
+    ],
+  });
+  if (!ok) return;
+  const r = doIpo(S);
+  if (r.ok) {
+    sfx.arp([523, 659, 784, 1047, 1319]);
+    store.markDirty();
+    toast(t('toast.ipo', { n: r.shares }), 'hot');
+    emit(TOPIC.IPO, r.shares);
+  }
+  paintIpo();
+  paintGauges();
+}
+
+async function exportSaveFile() {
+  const text = exportSave(S);
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'nexus-ops-deck-save.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast(t('toast.exported'), 'good');
+}
+
+async function importSaveFlow() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  const file = await new Promise((res) => {
+    input.addEventListener('change', () => res(input.files && input.files[0] ? input.files[0] : null), { once: true });
+    input.click();
+  });
+  if (!file) return;
   try {
-    const { state } = importSave(str);
-    Object.assign(S, migrate(defaultState(), state));
-    saveNow();
-    toast(t('imported'));
-    setTimeout(() => location.reload(), 600);
+    const text = await file.text();
+    const next = importSave(text);
+    store.hydrate(next);
+    store.markDirty();
+    store.save();
+    sfx.play('cash', 0.7);
+    toast(t('toast.imported'), 'good');
+    renderAll();
+    showView(shell.view);
   } catch (err) {
-    audio.error();
-    toast(t('imported_bad'), true);
+    sfx.play('error', 0.7);
+    toast(`${t('toast.importFail')} (${String(err.message || err)})`, 'bad');
   }
-});
-UI.btnReset.addEventListener('click', async () => {
-  const ok = await openModal(t('reset_save'), t('confirm_reset'), t('reset_save'));
+}
+
+async function wipeSave() {
+  const ok = await openVeil({
+    head: t('modal.wipeTitle'),
+    body: t('modal.wipeBody'),
+    actions: [
+      { label: t('modal.cancel'), value: false },
+      { label: t('modal.wipeOk'), value: true, tone: 'warn' },
+    ],
+  });
   if (!ok) return;
   clearSave();
-  location.reload();
-});
-
-/* ---------------- language ---------------- */
-function renderAll() {
-  applyI18n(document);
-  renderHud();
-  refreshTycoon();
-  refreshArcade();
-  renderLedger();
-  if (runningGame) {
-    UI.stageName.textContent = gameName(runningGame);
-    UI.stageHow.textContent = gameHowTo(runningGame);
-  }
+  store.reset();
+  sfx.play('explode', 0.5);
+  toast(t('toast.wiped'), 'bad');
+  renderAll();
+  showView(shell.view);
 }
 
-/* ---------------- offline / welcome-back ---------------- */
+/* ── welcome back ──────────────────────────────────────────────────────── */
 async function welcomeBack() {
-  const report = applyOffline(S.lastTick, nowMs());
-  if (!report) return;
-  if (report.earned <= 0) return;
-  S.seenOfflineModal = true;
-  await openModal(
-    t('welcome_title'),
-    `${t('welcome_body')}<br><br><b>${formatDurationLong(report.elapsedSeconds)}</b><br>` +
-    `<b style="color:#F59E0B">${formatMoney(report.earned)}</b>` +
-    (report.wasCapped ? `<br><small>${t('offline_cap')}: ${formatDurationLong(report.usedSeconds)}</small>` : '') +
-    (report.autoBought && report.autoBought.length
-      ? `<br><small>${report.autoBought.length} × ${t('auto_buyer')}</small>` : ''),
-    t('welcome_claim')
-  );
-  renderHud();
-  refreshTycoon();
+  const loaded = loadRaw();
+  if (loaded.state) store.hydrate(loaded.state);
+  else store.hydrate(null);
+
+  const savedAt = loaded.savedAt;
+  const elapsed = savedAt > 0 ? Math.max(0, (Date.now() - savedAt) / 1000) : 0;
+  const rate = baseFlow(S) * sharesMult(S.shares);
+  const rep = computeOfflineEarnings(rate, elapsed, OFFLINE_CAP_SECONDS, OFFLINE_EFFICIENCY);
+
+  if (S.seenWelcome || rep.earned <= 0 || !savedAt) {
+    S.seenWelcome = true;
+    return;
+  }
+
+  const mms = Math.floor(rep.usedSeconds / 60);
+  const sss = Math.floor(rep.usedSeconds % 60);
+  await openVeil({
+    head: t('modal.welcome'),
+    body: t('modal.welcomeBody', { time: `${mms}m ${sss}s` }),
+    value: cash(rep.earned),
+    actions: [{ label: t('modal.claim'), value: true, tone: 'go' }],
+  });
+  S.seenWelcome = true;
+  store.applyOffline(rep.usedSeconds, rate, Date.now());
+  store.markDirty();
+  if (rep.wasCapped) toast(t('toast.capped'), 'hot');
 }
 
-/* ---------------- boot ---------------- */
-function setBootProgress(p) {
-  if (UI.bootBar) UI.bootBar.style.width = Math.round(Math.max(0.08, Math.min(1, p)) * 100) + '%';
+/* ── i18n wiring ───────────────────────────────────────────────────────── */
+function applyStrings() {
+  applyDom(document);
+  el.btnLangTxt.textContent = getLang() === 'ar' ? 'EN' : 'ع';
+  el.btnLang.setAttribute('aria-label', getLang() === 'ar' ? 'Switch to English' : 'التبديل إلى العربية');
+  el.btnTerm.querySelector('.bk-l1').textContent = t('floor.run');
+  el.btnTerm.querySelector('.bk-l2').textContent = t('floor.runSub');
+  el.btnIpo.querySelector('.bk-l1').textContent = t('ipo.btn');
+  el.btnIpo.querySelector('.bk-l2').textContent = t('ipo.btnSub');
+  el.ovAgain.textContent = t('ov.again');
+  el.ovOut.textContent = t('ov.out');
+  for (const tab of el.nav.querySelectorAll('.tab')) {
+    const span = tab.querySelector('span');
+    if (span) span.textContent = t('nav.' + tab.dataset.view);
+  }
+  for (const g of GAMES) {
+    const card = el.cabGrid.querySelector(`[data-game="${g.id}"]`);
+    if (!card) continue;
+    card.querySelector('.cab-n').textContent = pick(g.name);
+    card.querySelector('.cab-t').textContent = pick(g.tag);
+    card.querySelector('.cab-d').textContent = pick(g.desc);
+  }
+  for (const row of el.deptList.querySelectorAll('.dept')) {
+    const id = row.dataset.dept;
+    const d = DEPTS.find((x) => x.id === id);
+    if (d) row.querySelector('.dept-n').textContent = pick(d.name);
+  }
+  for (const card of el.gearGrid.querySelectorAll('.gear')) {
+    const g = GEAR.find((x) => x.id === card.dataset.gear);
+    if (!g) continue;
+    card.querySelector('.gear-n').textContent = `${g.ic} ${pick(g.name)}`;
+    card.querySelector('.gear-d').textContent = pick(g.desc);
+  }
+  for (const card of el.execGrid.querySelectorAll('.exec')) {
+    const x = EXECS.find((e) => e.id === card.dataset.exec);
+    if (!x) continue;
+    card.querySelector('.exec-n').textContent = `${x.ic} ${pick(x.name)}`;
+    card.querySelector('.exec-d').textContent = pick(x.desc);
+  }
+  for (const li of el.topList.querySelectorAll('li')) {
+    const span = li.querySelector('span');
+    if (span) {
+      const m = /^(\d{2})\s*·\s*(.+?)(\s\d+R)?$/.exec(span.textContent.trim());
+      if (m) {
+        const g = GAMES.find((x) => x.no === Number(m[1]));
+        if (g) span.textContent = `${String(g.no).padStart(2, '0')} · ${pick(g.name)}${m[3] ? ' ' + m[3] : ''}`;
+      }
+    }
+  }
+  el.docBodyText = $('.doc');
+  if (el.docBodyText) el.docBodyText.textContent = t('sys.docBody');
+  if (shell.liveGame) {
+    const g = gameById(shell.liveGame);
+    if (g) el.cabHint.textContent = pick(g.hint);
+  }
+  el.termOut.textContent = pick(LINES.idle)[0];
 }
+
+/* ── render everything visible ─────────────────────────────────────────── */
+function renderAll() {
+  paintGauges();
+  paintCombo();
+  paintStatus();
+  if (shell.view === 'floor') paintFloor();
+  else if (shell.view === 'arcade') paintArcade();
+  else if (shell.view === 'ipo') paintIpo();
+  else paintSys();
+}
+
+/* ── event wiring ──────────────────────────────────────────────────────── */
+function wire() {
+  el.nav.addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (tab) { sfx.play('select', 0.4); showView(tab.dataset.view); }
+  });
+
+  el.btnTerm.addEventListener('pointerdown', (e) => { e.preventDefault(); pressTerminal(); });
+  el.btnTerm.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pressTerminal(); }
+  });
+
+  el.deptList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-buy]');
+    if (btn) buyDeptById(btn.dataset.buy);
+  });
+  el.gearGrid.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-gear]');
+    if (card) buyGearById(card.dataset.gear);
+  });
+  el.execGrid.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-exec]');
+    if (card) hireById(card.dataset.exec);
+  });
+
+  el.cabGrid.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-game]');
+    if (card) openCabinet(card.dataset.game);
+  });
+  el.cabGrid.addEventListener('keydown', (e) => {
+    const card = e.target.closest('[data-game]');
+    if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCabinet(card.dataset.game); }
+  });
+
+  el.cabExit.addEventListener('click', () => { sfx.play('select', 0.5); closeCabinet(); });
+  el.ovOut.addEventListener('click', () => { sfx.play('select', 0.5); closeCabinet(); });
+  el.ovAgain.addEventListener('click', () => {
+    const id = shell.liveGame;
+    const g = gameById(id);
+    if (!g) return;
+    sfx.play('click', 0.5);
+    el.cabOverlay.hidden = true;
+    el.cabScore.textContent = '0';
+    const againId = shell.liveGame;
+    machine.unmount();
+    el.cabScore.textContent = '0';
+    machine.mount(againId, g.create);
+  });
+
+  el.btnIpo.addEventListener('click', () => runIpo());
+  $('#btn-export').addEventListener('click', () => exportSaveFile());
+  $('#btn-import').addEventListener('click', () => importSaveFlow());
+  $('#btn-wipe').addEventListener('click', () => wipeSave());
+
+  el.btnLang.addEventListener('click', () => {
+    sfx.play('select', 0.5);
+    toggleLang();
+    S.lang = getLang();
+    store.markDirty();
+    applyStrings();
+    renderAll();
+    emit(TOPIC.LANG, getLang());
+  });
+
+  el.btnSfx.addEventListener('click', () => {
+    S.sfxOn = !S.sfxOn;
+    sfx.setEnabled(S.sfxOn);
+    if (S.sfxOn) sfx.play('click', 0.5);
+    store.markDirty();
+    paintOps();
+  });
+
+  el.btnMus.addEventListener('click', () => {
+    S.musOn = !S.musOn;
+    store.markDirty();
+    paintOps();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.cabinet.hidden) { e.preventDefault(); closeCabinet(); }
+    if (e.key === 'Escape' && !el.veil.hidden) closeVeil();
+  });
+
+  let rt = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      if (shell.view === 'arcade') paintArcade();
+      machine.refit();
+    }, 140);
+  });
+
+  window.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) store.save();
+  });
+  window.addEventListener('pagehide', () => store.save());
+}
+
+function paintOps() {
+  el.btnSfx.dataset.on = S.sfxOn ? '1' : '';
+  el.btnSfx.setAttribute('aria-pressed', S.sfxOn ? 'true' : 'false');
+  el.btnMus.dataset.on = S.musOn ? '1' : '';
+  el.btnMus.setAttribute('aria-pressed', S.musOn ? 'true' : 'false');
+}
+
+/* ── boot ──────────────────────────────────────────────────────────────── */
+const BOOT_STEPS = [
+  ['core', 0.18], ['save', 0.34], ['ledger', 0.5], ['gear', 0.62],
+  ['execs', 0.72], ['ipo', 0.8], ['kernel', 0.88], ['cabinet', 0.96],
+];
 
 async function boot() {
-  setLang(S.lang || 'en');
-  buildDepartments();
-  buildUpgrades();
-  buildManagers();
-  buildArcade();
-  UI.btnSound.classList.toggle('off', !S.settings.sfx);
-  UI.btnMusic.classList.toggle('off', !S.settings.music);
-  setBootProgress(0.08);
+  const log = (line) => {
+    const li = document.createElement('div');
+    li.textContent = `> ${line}`;
+    el.bootLog.appendChild(li);
+    while (el.bootLog.childElementCount > 4) el.bootLog.firstElementChild.remove();
+  };
+  const progress = (p) => { el.bootFill.style.width = `${clamp01(p) * 100}%`; };
 
-  const results = await preloadAll((done, total) => setBootProgress(0.1 + 0.85 * (done / total)));
-  const failed = results.filter((r) => !r.ok);
-  if (failed.length) console.warn('[nexus] games failed to load:', failed);
-  await paintAccents();
+  try {
+    setLang(getLang() || 'ar');
+    log(t('boot.log.core'));
+    progress(BOOT_STEPS[0][1]);
+    await new Promise((r) => setTimeout(r, 40));
 
-  renderAll();
-  startAutosave(5000);
+    log(t('boot.log.save'));
+    progress(BOOT_STEPS[1][1]);
+    await new Promise((r) => setTimeout(r, 40));
 
-  // offline earnings modal runs before the first frame so cash is correct
-  try { await welcomeBack(); } catch (e) { console.warn('[nexus] offline', e); }
+    log(t('boot.log.ledger'));
+    progress(BOOT_STEPS[2][1]);
 
-  UI.boot.classList.add('gone');
-  setTimeout(() => { UI.boot.style.display = 'none'; }, 400);
-  requestAnimationFrame(frame);
-}
+    log(t('boot.log.games'));
+    for (let i = 0; i < GAMES.length; i++) {
+      const g = GAMES[i];
+      if (typeof g.create !== 'function') throw new Error(`registry: ${g.id} has no create()`);
+      progress(0.2 + (i / GAMES.length) * 0.72);
+      await new Promise((r) => setTimeout(r, 12));
+    }
+    log(`${TOTAL_GAMES} cabinets online`);
 
-/* ---------------- main loop ---------------- */
-let lastFrame = 0;
-let listAccum = 0;
+    progress(1);
+    setLang(S.lang || getLang() || 'ar');
+    sfx.setEnabled(S.sfxOn !== false);
+    paintOps();
+    wire();
+    applyStrings();
+    renderAll();
+    showView('floor');
 
-function frame(ts) {
-  const now = ts || performance.now();
-  if (!lastFrame) lastFrame = now;
-  let dt = (now - lastFrame) / 1000;
-  lastFrame = now;
-  dt = Math.min(dt, 0.033);          // hard clamp, same rule as the physics kernel
+    store.subscribe(() => {
+      paintGauges();
+      paintCombo();
+      paintStatus();
+      if (shell.view === 'floor') paintFloor();
+      if (shell.view === 'ipo') paintIpo();
+      if (shell.view === 'sys') paintSys();
+    });
 
-  if (dt > 0) simTick(dt, nowMs());
+    const saver = startAutosave(AUTOSAVE_MS, () => S, () => {
+      emit(TOPIC.SAVE, Date.now());
+      paintStatus();
+    });
 
-  renderHud();
-  listAccum += dt;
-  if (listAccum >= 0.15) {
-    listAccum = 0;
-    refreshTycoon();
-    refreshArcade();
+    log(t('boot.log.ready'));
+    el.shell.hidden = false;
+
+    await welcomeBack();
+    renderAll();
+    showView(shell.view);
+
+    el.splash.classList.add('out');
+    setTimeout(() => { el.splash.style.display = 'none'; }, 520);
+    shell.booted = true;
+
+    let acc = 0;
+    const loop = createLoop((dt) => {
+      store.tick(dt);
+      acc += dt;
+      if (acc >= 0.25) {
+        acc = 0;
+        paintGauges();
+        paintCombo();
+        if (shell.view === 'sys') paintSys();
+      }
+      tickTerminal(dt);
+    });
+    loop.start();
+    void saver;
+  } catch (err) {
+    console.error('[opsdeck] boot failed', err);
+    log(t('boot.log.fail'));
   }
-  requestAnimationFrame(frame);
 }
 
-/* keep the canvas crisp when the layout changes */
-window.addEventListener('resize', () => { if (hub.isActive()) hub.resize(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+window.__opsdeck = {
+  state: S,
+  launch: (id) => { openCabinet(id); return machine.mounted; },
+  activeId: () => (machine.mounted ? shell.liveGame : null),
+  endNow: (score) => { if (machine.mounted) { machine.setScore(Number(score) || 0); machine.finish('quit'); } },
+  view: (name) => showView(name),
+  ready: () => shell.booted,
+};
 
-boot().catch((err) => {
-  console.error('[nexus] boot failed', err);
-  const b = document.querySelector('.boot-text');
-  if (b) b.textContent = 'Boot error: ' + err.message;
-});
+boot();
