@@ -1,0 +1,16 @@
+{
+  "name": "nexus-corp-empire-arcade",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexus Corp: Empire & Arcade — browser idle tycoon + 20-game arcade suite",
+  "scripts": {
+    "serve": "python3 -m http.server 8000 --bind 127.0.0.1",
+    "test": "node tests/run_tests.js",
+    "smoke": "node tools/smoke.js",
+    "e2e": "node tools/e2e.js",
+    "verify": "npm run test && npm run smoke && npm run e2e",
+    "check": "node --check src/main.js"
+  },
+  "engines": { "node": ">=20" }
+}
