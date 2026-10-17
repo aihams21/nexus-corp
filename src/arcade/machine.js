@@ -45,7 +45,10 @@ export function createMachine(o = {}) {
 
   const bag = new ListenerBag();
   const timers = new Timers();
-  const input = new Input(bag, canvas, PLANE_W, PLANE_H);
+  // Input registers its DOM listeners into `bag`, and unmount() clears the whole
+  // bag — so a fresh Input has to be built on every mount or the second cabinet
+  // onwards would run with a permanently dead keyboard and mouse.
+  let input = new Input(bag, canvas, PLANE_W, PLANE_H);
   const audio = o.audio || null;
   const onScore = o.onScore || (() => {});
   const onFinish = o.onFinish || (() => {});
@@ -143,6 +146,9 @@ export function createMachine(o = {}) {
     flashUntil = 0;
     fit();
 
+    // rebind input *after* unmount() has cleared the bag
+    input = new Input(bag, canvas, PLANE_W, PLANE_H);
+
     handle = factory(machine) || null;
     if (handle && typeof handle.update === 'function') updateFn = handle.update;
     if (handle && typeof handle.draw === 'function') drawFn = handle.draw;
@@ -210,7 +216,10 @@ export function createMachine(o = {}) {
     // services
     g,
     canvas,
-    input,
+    // getter, not a snapshot: mount() swaps in a fresh Input and games read m.input live
+    get input() {
+      return input;
+    },
     bag,
     timers,
     rng,

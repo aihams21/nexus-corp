@@ -816,6 +816,7 @@ async function boot() {
 
 window.__opsdeck = {
   state: S,
+  machine,
   launch: (id) => { openCabinet(id); return machine.mounted; },
   activeId: () => (machine.mounted ? shell.liveGame : null),
   endNow: (score) => { if (machine.mounted) { machine.setScore(Number(score) || 0); machine.finish('quit'); } },

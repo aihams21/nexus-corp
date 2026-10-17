@@ -188,6 +188,43 @@ async function runSmoke() {
 }
 `;
 
+/* ── in-page input probe (guards the listener lifecycle) ───────────────── */
+// A game animating on its own proves nothing. These send one real key and one
+// real pointer press and require the machine's own Input to report them, both
+// on the FIRST cabinet and after the cabinet has been closed and reopened.
+const INPUT_PROBE_SRC = `
+async function inputProbe(id) {
+  const root = window.__opsdeck;
+  const m = root.machine;
+  const canvas = document.getElementById('screen');
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  const out = { id, bag: 0, keySeen: false, keyHeld: false, ptrSeen: false, px: -1, py: -1 };
+  await frame();
+  out.bag = m.bag.size;
+
+  window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft', key: 'ArrowLeft', bubbles: true }));
+  await frame();
+  out.keySeen = m.input.wasPressed('ArrowLeft') === true || m.input.isDown('ArrowLeft') === true;
+  out.keyHeld = m.input.isDown('ArrowLeft') === true;
+  window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowLeft', key: 'ArrowLeft', bubbles: true }));
+  await frame();
+
+  const r = canvas.getBoundingClientRect();
+  const cx = r.left + r.width * 0.7, cy = r.top + r.height * 0.4;
+  canvas.dispatchEvent(new PointerEvent('pointerdown', {
+    bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse',
+    clientX: cx, clientY: cy, buttons: 1,
+  }));
+  await frame();
+  out.ptrSeen = m.input.pointerDown === true || m.input.clicked === true;
+  out.px = Math.round(m.input.px); out.py = Math.round(m.input.py);
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse', clientX: cx, clientY: cy, buttons: 0 }));
+  await frame();
+  out.released = m.input.pointerDown === false;
+  return out;
+}
+`;
+
 /* ── main ─────────────────────────────────────────────────────────────── */
 let server;
 let chrome;
@@ -278,6 +315,29 @@ try {
       check(`g ${r.id} launch+render+teardown`, r.launched && r.colors > 1 && r.clean, r.error || `frames=${r.frames} colors=${r.colors} clean=${r.clean}`);
     }
     check('all 20 cabinets ran', rows.length === 20 && rows.every((r) => r.launched), `${rows.length} rows`);
+
+    // real-input guard: the first cabinet, then a close/reopen cycle
+    await page.eval((src) => { (0, eval)(src); }, INPUT_PROBE_SRC);
+    const probe = await page.eval(async () => {
+      const root = window.__opsdeck;
+      root.launch('g07');
+      await new Promise((r) => setTimeout(r, 300));
+      const one = await window.inputProbe('g07');
+      document.getElementById('cab-exit').click();
+      await new Promise((r) => setTimeout(r, 260));
+      const closed = root.activeId() === null;
+      root.launch('g08');
+      await new Promise((r) => setTimeout(r, 300));
+      const two = await window.inputProbe('g08');
+      document.getElementById('cab-exit').click();
+      await new Promise((r) => setTimeout(r, 200));
+      return { one, two, closed };
+    });
+    check('input live on the first cabinet', probe.one.keySeen && probe.one.ptrSeen, JSON.stringify(probe.one));
+    check('pointer position tracks the mouse', probe.one.px > 200 && probe.one.py > 80, `${probe.one.px},${probe.one.py}`);
+    check('cabinet exits cleanly', probe.closed);
+    check('input rebinds after a cabinet closes', probe.two.keySeen && probe.two.ptrSeen, JSON.stringify(probe.two));
+    check('listener bag is repopulated on mount', probe.one.bag > 5 && probe.two.bag > 5, `${probe.one.bag} / ${probe.two.bag}`);
   }
 
   if (ONLY === 'all' || ONLY === 'e2e') {
